@@ -2,10 +2,8 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
-export const dynamic = 'force-dynamic';
-
 // ========================================================
-// 1. 음원 목록 및 단건 조회 (안전한 songs 테이블 직접 조회)
+// 1. 음원 목록 및 단건 조회 (외래키 조인 에러 없는 안전 쿼리)
 // ========================================================
 export async function GET(req: Request) {
   try {
@@ -24,7 +22,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ song: data });
     }
 
-    // 💡 외래키 조인 에러(500)를 방지하기 위해 songs 테이블 직접 조회
     const { data: songs, error } = await supabase
       .from('songs')
       .select('id, title, artist, genre, bpm, original_key, youtube_url, created_at')
