@@ -200,26 +200,37 @@ async function analyzeAudioFeatures(previewUrl?: string): Promise<{ bpm: number 
   if (!previewUrl) return { bpm: null, original_key: null };
 
   try {
-    const res = await fetch(previewUrl);
+    const res = await fetch(previewUrl, { signal: AbortSignal.timeout(6000) });
     if (!res.ok) return { bpm: null, original_key: null };
 
     const arrayBuffer = await res.arrayBuffer();
-    const audioContext = new AudioContext();
+
+    // 💡 Vercel 서버리스 네이티브 모듈 런타임 에러 방어
+    let AudioContextClass: any;
+    try {
+      const webAudio = await import('node-web-audio-api');
+      AudioContextClass = webAudio.AudioContext;
+    } catch {
+      return { bpm: null, original_key: null };
+    }
+
+    const audioContext = new AudioContextClass();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
     const channelData = audioBuffer.getChannelData(0);
 
     const calc = new MusicTempo(channelData);
     const tempo = Math.round(calc.tempo);
     const validBpm = tempo > 40 && tempo < 240 ? tempo : null;
-
     const validKey = detectKeyFromChannel(channelData, audioBuffer.sampleRate);
 
-    return {
-      bpm: validBpm,
-      original_key: validKey,
-    };
+    // AudioContext 자원 해제
+    if (audioContext.close) {
+      await audioContext.close();
+    }
+
+    return { bpm: validBpm, original_key: validKey };
   } catch (err: any) {
-    console.warn(`[Audio Analysis Skip]:`, err.message);
+    console.warn('[Audio Analysis Skipped in Serverless]:', err.message);
     return { bpm: null, original_key: null };
   }
 }
