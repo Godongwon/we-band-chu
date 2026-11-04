@@ -1,40 +1,51 @@
+// app/api/songs/route.ts
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
+export const dynamic = 'force-dynamic';
+
+// ========================================================
+// 1. 음원 목록 및 단건 조회 (안전한 songs 테이블 직접 조회)
+// ========================================================
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const limit = parseInt(searchParams.get('limit') || '2000', 10);
     const id = searchParams.get('id');
 
-    let query = supabase
-      .from('songs')
-      .select(`
-        *,
-        target_artists:artist_id (
-          name,
-          vocal_gender,
-          has_keys
-        )
-      `);
-
     if (id) {
-      const { data, error } = await query.eq('id', id).maybeSingle();
+      const { data, error } = await supabase
+        .from('songs')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
       if (error) throw error;
       return NextResponse.json({ song: data });
     }
 
-    const { data, error } = await query
+    // 💡 외래키 조인 에러(500)를 방지하기 위해 songs 테이블 직접 조회
+    const { data: songs, error } = await supabase
+      .from('songs')
+      .select('id, title, artist, genre, bpm, original_key, youtube_url, created_at')
       .order('created_at', { ascending: false })
       .limit(limit);
 
-    if (error) throw error;
-    return NextResponse.json({ songs: data || [] });
+    if (error) {
+      console.error('[API /api/songs GET Error]:', error.message);
+      throw error;
+    }
+
+    return NextResponse.json({ songs: songs || [] });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('[API /api/songs Server Error]:', error.message);
+    return NextResponse.json({ error: error.message, songs: [] }, { status: 500 });
   }
 }
 
+// ========================================================
+// 2. 음원 단건 및 다중 선택 삭제
+// ========================================================
 export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
