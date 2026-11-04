@@ -1,6 +1,8 @@
-// app/api/songs/sync/route.ts
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
+// @ts-ignore
+import MusicTempo from 'music-tempo';
+import { AudioContext } from 'node-web-audio-api';
 
 // ========================================================
 // 1. 수집 설정 및 전역 쿼터 모니터링 (싱글톤)
@@ -54,18 +56,19 @@ export function getQuotaStatus() {
 let isHarvestingRunning = false;
 
 // ========================================================
-// 2. Apple iTunes Search API (1단계: 정식 발매 전곡 탐색)
+// 2. iTunes Search API (음원 탐색 + previewUrl 획득)
 // ========================================================
 interface ITunesTrack {
   trackName: string;
   artistName: string;
   primaryGenreName?: string;
+  previewUrl?: string;
 }
 
 async function fetchTracksFromITunes(
   artist: string,
   searchAlias?: string | null
-): Promise<Array<{ title: string; defaultGenre: string }>> {
+): Promise<Array<{ title: string; defaultGenre: string; previewUrl?: string }>> {
   const searchTerms = searchAlias ? [searchAlias.trim(), artist] : [artist];
 
   for (const term of searchTerms) {
@@ -82,7 +85,7 @@ async function fetchTracksFromITunes(
       const data = await res.json();
       if (!data.results || data.results.length === 0) continue;
 
-      const candidates: Array<{ title: string; defaultGenre: string }> = [];
+      const candidates: Array<{ title: string; defaultGenre: string; previewUrl?: string }> = [];
       const usedTitles = new Set<string>();
 
       const targetArtistClean = artist.toLowerCase().replace(/\s+/g, '');
@@ -112,6 +115,7 @@ async function fetchTracksFromITunes(
         candidates.push({
           title: cleanTitle,
           defaultGenre: item.primaryGenreName || '록/포크',
+          previewUrl: item.previewUrl,
         });
       }
 
@@ -131,50 +135,90 @@ async function fetchTracksFromITunes(
 }
 
 // ========================================================
-// 3. MusicBrainz Open Database API (장르 태그 인리치먼트)
+// 3. 오디오 파형 기반 실측 BPM 및 Key(조성) 동시 검출
 // ========================================================
-async function fetchMetadataFromMusicBrainz(
-  artist: string,
-  title: string,
-  fallbackGenre: string
-): Promise<{ genre: string; bpm: number | null }> {
-  try {
-    const luceneQuery = `recording:"${title}" AND artist:"${artist}"`;
-    const url = `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(
-      luceneQuery
-    )}&fmt=json&limit=1`;
+const PITCH_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'BandSongCrawler/1.0.0 (contact: admin@bandhub.local)',
-      },
-      cache: 'no-store',
-    });
+function correlate(data: number[], profile: number[]): number {
+  const dMean = data.reduce((a, b) => a + b, 0) / data.length;
+  const pMean = profile.reduce((a, b) => a + b, 0) / profile.length;
+  let num = 0, den1 = 0, den2 = 0;
+  for (let i = 0; i < data.length; i++) {
+    const dDiff = data[i] - dMean;
+    const pDiff = profile[i] - pMean;
+    num += dDiff * pDiff;
+    den1 += dDiff * dDiff;
+    den2 += pDiff * pDiff;
+  }
+  return den1 && den2 ? num / Math.sqrt(den1 * den2) : 0;
+}
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.recordings && data.recordings.length > 0) {
-        const recording = data.recordings[0];
 
-        const tags = recording.tags || recording.genres || [];
-        if (tags.length > 0) {
-          tags.sort((a: any, b: any) => (b.count || 0) - (a.count || 0));
-          const bestTag = tags[0].name;
-          return {
-            genre: bestTag,
-            bpm: null, // 💡 임의 120 대체 없이 BPM 없음(null)으로 명시
-          };
-        }
-      }
+function detectKeyFromChannel(channelData: Float32Array, sampleRate: number): string | null {
+  const chroma = new Array(12).fill(0);
+  const step = Math.floor(sampleRate / 4); // 0.25초 간격 샘플링
+
+  for (let i = 0; i < channelData.length - 2048; i += step) {
+    let energy = 0;
+    for (let j = 0; j < 1024; j++) {
+      energy += Math.abs(channelData[i + j]);
     }
-  } catch (err: any) {
-    console.warn(`[MusicBrainz Skip] ${artist} - ${title}:`, err.message);
+    const idx = Math.floor((i / sampleRate) * 12) % 12;
+    chroma[idx] += energy;
   }
 
-  return {
-    genre: fallbackGenre || '밴드음악',
-    bpm: null, // 💡 BPM 없음(null)으로 반환
-  };
+  let bestKey: string | null = null;
+  let maxCorr = -Infinity;
+
+  for (let shift = 0; shift < 12; shift++) {
+    const shifted = [...chroma.slice(shift), ...chroma.slice(0, shift)];
+    
+    // 메이저 판별 (예: C, E, F#, B)
+    const majorCorr = correlate(shifted, MAJOR_PROFILE);
+    if (majorCorr > maxCorr) {
+      maxCorr = majorCorr;
+      bestKey = `${PITCH_NAMES[shift]}`; // Major는 깔끔하게 음계명만 (예: E, B)
+    }
+
+    // 마이너 판별 (예: C#m, Am, F#m)
+    const minorCorr = correlate(shifted, MINOR_PROFILE);
+    if (minorCorr > maxCorr) {
+      maxCorr = minorCorr;
+      bestKey = `${PITCH_NAMES[shift]}m`; // Minor는 소문자 m 추가 (예: C#m)
+    }
+  }
+
+  return bestKey; // 미검출 시 null 반환
+}
+
+async function analyzeAudioFeatures(previewUrl?: string): Promise<{ bpm: number | null; original_key: string | null }> {
+  if (!previewUrl) return { bpm: null, original_key: null };
+
+  try {
+    const res = await fetch(previewUrl);
+    if (!res.ok) return { bpm: null, original_key: null };
+
+    const arrayBuffer = await res.arrayBuffer();
+    const audioContext = new AudioContext();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    const channelData = audioBuffer.getChannelData(0);
+
+    const calc = new MusicTempo(channelData);
+    const tempo = Math.round(calc.tempo);
+    const validBpm = tempo > 40 && tempo < 240 ? tempo : null;
+
+    const validKey = detectKeyFromChannel(channelData, audioBuffer.sampleRate);
+
+    return {
+      bpm: validBpm,
+      original_key: validKey,
+    };
+  } catch (err: any) {
+    console.warn(`[Audio Analysis Skip]:`, err.message);
+    return { bpm: null, original_key: null };
+  }
 }
 
 // ========================================================
@@ -259,7 +303,7 @@ async function verifyAndFetchOfficialAudio(
 }
 
 // ========================================================
-// 5. 단일 밴드 배치 수집 실행기
+// 5. 단일 밴드 배치 수집 실행기 (BPM + Key 동시 분석)
 // ========================================================
 export async function runArtistHarvestBatch(): Promise<{
   success: boolean;
@@ -288,7 +332,7 @@ export async function runArtistHarvestBatch(): Promise<{
   const ytApiKey = process.env.YOUTUBE_API_KEY || '';
 
   isHarvestingRunning = true;
-  console.log(`[AutoHarvest] >>> [MusicBrainz 연동 수집 시작] "${targetArtist}" (별칭: ${searchAlias || '없음'})`);
+  console.log(`[AutoHarvest] >>> [BPM + Key 동시 실측 수집 시작] "${targetArtist}" (별칭: ${searchAlias || '없음'})`);
 
   let savedCount = 0;
 
@@ -325,12 +369,10 @@ export async function runArtistHarvestBatch(): Promise<{
     for (const track of newTracksToProcess) {
       const cleanTitle = track.title.trim();
 
-      const meta = await fetchMetadataFromMusicBrainz(
-        targetArtist,
-        cleanTitle,
-        track.defaultGenre
-      );
+      // 30초 오디오 파형에서 BPM과 Key를 단일 디코딩으로 동시 계산
+      const { bpm, original_key } = await analyzeAudioFeatures(track.previewUrl);
 
+      // 유튜브 음원 URL 연결
       let officialAudioUrl: string | null = null;
       if (!globalThis.__youtubeQuotaExceeded && ytApiKey) {
         officialAudioUrl = await verifyAndFetchOfficialAudio(
@@ -340,29 +382,29 @@ export async function runArtistHarvestBatch(): Promise<{
         );
       }
 
-      // 💡 bpm: meta.bpm (확인되지 않으면 null로 저장)
-    const { error: songError } = await supabase.from('songs').upsert(
-  {
-    title: cleanTitle,
-    artist: targetArtist,
-    artist_id: currentTarget.id,
-    genre: meta.genre,
-    bpm: meta.bpm,
-    original_key: '원키',
-    youtube_url: officialAudioUrl,
-    live_url: null,
-    cover_url: null,
-    created_at: new Date().toISOString(),
-  },
-  { onConflict: 'artist,title' } // 💡 'artist,title' 복합 키로 지정
-);
+      // Supabase 적재 (artist, title 복합 제약조건 충돌 방지)
+      const { error: songError } = await supabase.from('songs').upsert(
+        {
+          title: cleanTitle,
+          artist: targetArtist,
+          artist_id: currentTarget.id,
+          genre: track.defaultGenre || '밴드음악',
+          bpm: bpm,
+          original_key: original_key,
+          youtube_url: officialAudioUrl,
+          live_url: null,
+          cover_url: null,
+          created_at: new Date().toISOString(),
+        },
+        { onConflict: 'artist,title' }
+      );
 
       if (!songError) {
         savedCount++;
         existingTitleSet.add(cleanTitle.toLowerCase());
-        const bpmDisplay = meta.bpm ? `${meta.bpm}` : '없음';
+        const bpmDisplay = bpm ? `${bpm}` : '측정 불가';
         console.log(
-          `[AutoHarvest DB 적재] (${savedCount}/${newTracksToProcess.length}) ${targetArtist} - ${cleanTitle} [BPM: ${bpmDisplay}, 장르: ${meta.genre}] (음원URL: ${officialAudioUrl ? 'O' : 'X'})`
+          `[AutoHarvest DB 적재] (${savedCount}/${newTracksToProcess.length}) ${targetArtist} - ${cleanTitle} [BPM: ${bpmDisplay}, Key: ${original_key}, 장르: ${track.defaultGenre}] (음원URL: ${officialAudioUrl ? 'O' : 'X'})`
         );
       } else {
         console.error(`[AutoHarvest DB Error]:`, songError.message);
@@ -388,7 +430,7 @@ export async function runArtistHarvestBatch(): Promise<{
 // ========================================================
 if (!globalThis.__artistHarvestInterval) {
   console.log(
-    `[AutoHarvest] MusicBrainz 연동 수집 워커 가동됨. (주기: ${
+    `[AutoHarvest] BPM 및 Key 동시 실측 수집 워커 가동됨. (주기: ${
       HARVEST_INTERVAL_MS / 1000
     }초)`
   );
@@ -408,7 +450,7 @@ if (!globalThis.__artistHarvestInterval) {
 export async function GET(req: Request) {
   const result = await runArtistHarvestBatch();
   return NextResponse.json({
-    message: 'iTunes 전곡 + MusicBrainz 오픈 DB 파이프라인 가동 중',
+    message: 'iTunes 전곡 + previewUrl 실측 BPM 및 Key 파이프라인 가동 중',
     intervalMs: HARVEST_INTERVAL_MS,
     lastExecution: result,
     quota: getQuotaStatus(),

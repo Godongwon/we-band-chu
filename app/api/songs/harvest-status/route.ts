@@ -18,7 +18,7 @@ export async function GET(req: Request) {
       .from('songs')
       .select('id, title, artist, genre, youtube_url, live_url, cover_url, created_at')
       .order('created_at', { ascending: false })
-      .limit(15);
+      .range(0,4999);
 
     if (listError) throw listError;
 

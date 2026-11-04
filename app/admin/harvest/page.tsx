@@ -27,6 +27,8 @@ interface HarvestedSong {
   title: string;
   artist: string;
   genre: string;
+  bpm?: number | null;
+  original_key?: string | null;
   youtube_url?: string;
   live_url?: string;
   cover_url?: string;
@@ -551,7 +553,7 @@ export default function HarvestMonitorPage() {
                         </button>
                       </td>
 
-                      {/* 💡 아티스트명 클릭 영역 */}
+                      {/* 아티스트명 클릭 영역 */}
                       <td className="py-2.5 px-4">
                         <button
                           type="button"
@@ -613,7 +615,7 @@ export default function HarvestMonitorPage() {
               수집된 곡 목록 ({displayedSongs.length}곡)
             </h2>
 
-            {/* 💡 선택된 아티스트 필터 뱃지 및 해제 버튼 */}
+            {/* 선택된 아티스트 필터 뱃지 및 해제 버튼 */}
             {selectedArtist && (
               <div className="inline-flex items-center gap-1.5 bg-indigo-950 border border-indigo-700 text-indigo-300 px-2.5 py-0.5 rounded-full text-xs font-bold animate-fadeIn">
                 <Filter className="w-3 h-3 text-indigo-400" />
@@ -681,7 +683,8 @@ export default function HarvestMonitorPage() {
                 : '해당 조건에 일치하는 곡이 없습니다.'}
             </div>
           ) : (
-            <div className="divide-y divide-slate-800/80">
+            /* 💡 스크롤뷰 적용 영역: max-h-[620px] 및 overflow-y-auto 추가 */
+            <div className="divide-y divide-slate-800/80 max-h-[620px] overflow-y-auto pr-1">
               {displayedSongs.map((song) => {
                 const isMissingUrl = !song.youtube_url;
 
@@ -695,24 +698,36 @@ export default function HarvestMonitorPage() {
                     }`}
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-sm text-slate-100 truncate">{song.title}</span>
-                        <span className="text-xs text-indigo-300">({song.artist})</span>
-                        <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-slate-700">
-                          {song.genre || '밴드음악'}
-                        </span>
+  <div className="flex items-center gap-2 flex-wrap">
+    <span className="font-bold text-sm text-slate-100 truncate">{song.title}</span>
+    <span className="text-xs text-indigo-300">({song.artist})</span>
+    
+    {/* 장르 뱃지 */}
+    <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-slate-700">
+      {song.genre || '밴드음악'}
+    </span>
 
-                        {isMissingUrl && (
-                          <span className="text-[10px] bg-amber-950/80 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3 text-amber-400" />
-                            메타데이터만 적재됨 (URL 대기)
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-slate-500 mt-1 block">
-                        수집 시간: {song.created_at ? new Date(song.created_at).toLocaleTimeString() : '-'}
-                      </span>
-                    </div>
+    {/* 💡 실측 BPM 뱃지 */}
+    <span className="text-[10px] font-mono font-medium text-indigo-300 bg-indigo-950/60 border border-indigo-800/50 px-1.5 py-0.5 rounded">
+      BPM: {song.bpm ? song.bpm : '없음'}
+    </span>
+
+    {/* 💡 원곡 키(Key) 뱃지 */}
+<span className="text-[10px] font-mono font-bold text-emerald-300 bg-emerald-950/60 border border-emerald-800/50 px-1.5 py-0.5 rounded">
+  Key: {song.original_key && song.original_key !== '원키' ? song.original_key : '미측정'}
+</span>
+
+    {isMissingUrl && (
+      <span className="text-[10px] bg-amber-950/80 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+        <AlertCircle className="w-3 h-3 text-amber-400" />
+        메타데이터만 적재됨 (URL 대기)
+      </span>
+    )}
+  </div>
+  <span className="text-[10px] text-slate-500 mt-1 block">
+    수집 시간: {song.created_at ? new Date(song.created_at).toLocaleTimeString() : '-'}
+  </span>
+</div>
 
                     <div className="flex items-center gap-2 shrink-0">
                       {song.youtube_url ? (
