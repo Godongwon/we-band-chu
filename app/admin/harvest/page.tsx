@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { 
   Database, 
   RefreshCw, 
@@ -21,19 +21,6 @@ import {
   Clock,
   Trash2
 } from 'lucide-react';
-
-interface HarvestStatus {
-  lastExecution: {
-    artist: string;
-    count: number;
-    time: string;
-  } | null;
-  totalSongs: number;
-  totalArtists: number;
-  activeArtists: number;
-  analyzedBpmCount?: number;
-  analyzedKeyCount?: number;
-}
 
 interface TargetArtist {
   id: string;
@@ -60,7 +47,6 @@ export default function HarvestAdminPage() {
   const [password, setPassword] = useState<string>('');
   const [authError, setAuthError] = useState<string>('');
 
-  const [status, setStatus] = useState<HarvestStatus | null>(null);
   const [artists, setArtists] = useState<TargetArtist[]>([]);
   const [songs, setSongs] = useState<SongItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -77,6 +63,46 @@ export default function HarvestAdminPage() {
   const [newArtistPriority, setNewArtistPriority] = useState<number>(1);
   const [addingArtist, setAddingArtist] = useState<boolean>(false);
 
+  // 💡 로드된 songs와 artists로부터 상단 핵심 지표를 즉시 산출 (별도 통계 API 의존 제거)
+  const stats = useMemo(() => {
+    const totalSongs = songs.length;
+    const totalArtists = artists.length;
+    const activeArtists = artists.filter((a) => a.is_active !== false).length;
+    
+    const analyzedBpmCount = songs.filter((s) => s.bpm !== null && s.bpm !== undefined && s.bpm > 0).length;
+    const analyzedKeyCount = songs.filter((s) => s.original_key !== null && s.original_key !== undefined && s.original_key.trim() !== '').length;
+
+    const bpmRate = totalSongs > 0 ? Math.round((analyzedBpmCount / totalSongs) * 100) : 0;
+    const keyRate = totalSongs > 0 ? Math.round((analyzedKeyCount / totalSongs) * 100) : 0;
+
+    // 가장 최근 수집된 아티스트 계산
+    const harvestedArtists = artists
+      .filter((a) => a.last_harvested_at)
+      .sort((a, b) => new Date(b.last_harvested_at!).getTime() - new Date(a.last_harvested_at!).getTime());
+
+    let lastExecution = null;
+    if (harvestedArtists.length > 0) {
+      const latest = harvestedArtists[0];
+      const count = songs.filter((s) => s.artist === latest.name).length;
+      lastExecution = {
+        artist: latest.name,
+        count: count,
+        time: latest.last_harvested_at!,
+      };
+    }
+
+    return {
+      totalSongs,
+      totalArtists,
+      activeArtists,
+      analyzedBpmCount,
+      analyzedKeyCount,
+      bpmRate,
+      keyRate,
+      lastExecution,
+    };
+  }, [songs, artists]);
+
   useEffect(() => {
     const savedAuth = sessionStorage.getItem('admin_authenticated');
     if (savedAuth === 'true') {
@@ -88,14 +114,13 @@ export default function HarvestAdminPage() {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    fetchStatus();
     fetchArtists();
     fetchSongs();
 
     const interval = setInterval(() => {
       console.log('[관리자] 실시간 수집 현황 자동 폴링 (주기: 15초)');
-      fetchStatus();
       fetchArtists();
+      fetchSongs();
     }, 15000);
 
     return () => clearInterval(interval);
@@ -130,19 +155,6 @@ export default function HarvestAdminPage() {
     }
   }
 
-  async function fetchStatus() {
-    try {
-      const res = await fetch('/api/songs/harvest-status');
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
-      if (res.ok) {
-        setStatus(data);
-      }
-    } catch (err: any) {
-      console.error('[관리자] 수집 현황 로드 에러:', err.message);
-    }
-  }
-
   async function fetchArtists() {
     try {
       const res = await fetch('/api/artists');
@@ -158,13 +170,11 @@ export default function HarvestAdminPage() {
 
   async function fetchSongs() {
     setLoading(true);
-    console.log('[관리자] 수집 음원 전체 목록 로드 시작');
     try {
       const res = await fetch('/api/songs?limit=2000');
       const text = await res.text();
       const data = text ? JSON.parse(text) : {};
       if (res.ok && data.songs) {
-        console.log(`[관리자] 총 ${data.songs.length}곡 로드 완료`);
         setSongs(data.songs);
       }
     } catch (err: any) {
@@ -204,7 +214,6 @@ export default function HarvestAdminPage() {
         setNewArtistPriority(1);
         setIsAddArtistOpen(false);
         await fetchArtists();
-        await fetchStatus();
       } else {
         console.error('[관리자] 밴드 등록 실패:', data.message || data.error);
         alert(`밴드 등록 실패: ${data.message || data.error || `HTTP ${res.status}`}`);
@@ -237,7 +246,6 @@ export default function HarvestAdminPage() {
           setSelectedArtist('ALL');
         }
         await fetchArtists();
-        await fetchStatus();
       } else {
         alert(`밴드 삭제 실패: ${data.message || data.error || `HTTP ${res.status}`}`);
       }
@@ -268,7 +276,6 @@ export default function HarvestAdminPage() {
         const msg = `${artist} ${count}곡 수집/분석 갱신 완료`;
         console.log(`[관리자] [완료] ${msg}`);
         setLastMessage(msg);
-        await fetchStatus();
         await fetchArtists();
         await fetchSongs();
       } else {
@@ -305,7 +312,6 @@ export default function HarvestAdminPage() {
         const msg = `${data.updatedCount || 0}곡 분석 갱신됨 (남은 대상: ${data.remainingCount || 0}곡)`;
         console.log(`[관리자] [백필 완료] ${msg}`);
         setLastMessage(msg);
-        await fetchStatus();
         await fetchSongs();
       } else {
         const errorMsg = `백필 실패: ${data.error || data.message || `HTTP ${res.status}`}`;
@@ -416,31 +422,31 @@ export default function HarvestAdminPage() {
           </div>
         )}
 
-        {/* 핵심 통계 지표 카드 */}
+        {/* 💡 즉시 산출된 핵심 지표 카드 */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
             <span className="text-xs text-slate-400 block mb-1">총 수집 곡수</span>
-            <span className="text-2xl font-black text-slate-100">{status?.totalSongs ?? '-'}곡</span>
+            <span className="text-2xl font-black text-slate-100">{stats.totalSongs}곡</span>
           </div>
 
           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
             <span className="text-xs text-slate-400 block mb-1">수집 대상 아티스트</span>
             <span className="text-2xl font-black text-slate-100">
-              {status?.activeArtists ?? '-'}/{status?.totalArtists ?? '-'}팀
+              {stats.activeArtists}/{stats.totalArtists}팀
             </span>
           </div>
 
           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
             <span className="text-xs text-slate-400 block mb-1">BPM 실측 완료율</span>
             <span className="text-2xl font-black text-emerald-400">
-              {status?.totalSongs ? Math.round(((status.analyzedBpmCount || 0) / status.totalSongs) * 100) : 0}%
+              {stats.bpmRate}%
             </span>
           </div>
 
           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
             <span className="text-xs text-slate-400 block mb-1">조성(Key) 산출 완료율</span>
             <span className="text-2xl font-black text-purple-400">
-              {status?.totalSongs ? Math.round(((status.analyzedKeyCount || 0) / status.totalSongs) * 100) : 0}%
+              {stats.keyRate}%
             </span>
           </div>
 
@@ -448,13 +454,13 @@ export default function HarvestAdminPage() {
             <span className="text-xs text-slate-400 block mb-1 flex items-center gap-1">
               <Clock className="w-3.5 h-3.5 text-indigo-400" /> 마지막 갱신
             </span>
-            {status?.lastExecution ? (
+            {stats.lastExecution ? (
               <div>
                 <span className="text-sm font-bold text-slate-100 block truncate">
-                  {new Date(status.lastExecution.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  {new Date(stats.lastExecution.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                 </span>
                 <span className="text-[10px] text-indigo-400 block truncate mt-0.5">
-                  {status.lastExecution.artist} ({status.lastExecution.count}곡)
+                  {stats.lastExecution.artist} ({stats.lastExecution.count}곡)
                 </span>
               </div>
             ) : (
@@ -463,7 +469,7 @@ export default function HarvestAdminPage() {
           </div>
         </div>
 
-        {/* 2열 메인 레이아웃 */}
+        {/* 2열 메인 레이아웃: 아티스트 목록 및 전체 수집 곡 스크롤뷰 */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           
           {/* 좌측: 수집 대상 아티스트 큐 */}
