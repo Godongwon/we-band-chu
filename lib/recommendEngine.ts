@@ -123,13 +123,29 @@ async function searchYoutubeVideoUrl(query: string, apiKey: string): Promise<str
   }
 }
 
-// 탭 조건에 맞춘 Supabase DB 폴백 조회 (조건 없는 무작위 방지)
+// 탭 조건 및 보컬 성별에 맞춘 Supabase DB 폴백 조회
 export async function getDbFallbackSongs(
   category: string,
   excludeTitles: string[] = [],
-  limit: number = 10
+  limit: number = 10,
+  bandProfile?: { vocal_gender?: string; [key: string]: any }
 ): Promise<RecommendedSong[]> {
   try {
+    // 1. 아티스트별 성별 메타데이터 동적 조회 (하드코딩 배제)
+    const { data: artistsData } = await supabase
+      .from('target_artists')
+      .select('name, vocal_gender');
+
+    const artistGenderMap = new Map<string, string>();
+    if (artistsData) {
+      for (const a of artistsData) {
+        if (a.name) {
+          artistGenderMap.set(a.name.toLowerCase().trim(), a.vocal_gender || 'MALE');
+        }
+      }
+    }
+
+    // 2. 카테고리(BPM) 조건 쿼리
     let query = supabase.from('songs').select('*');
 
     if (category === 'HIGH_TENSION') {
@@ -140,26 +156,43 @@ export async function getDbFallbackSongs(
       query = query.lte('bpm', 120);
     }
 
-    const { data: dbSongs } = await query.limit(40);
+    let { data: dbSongs } = await query.limit(100);
+
+    // 해당 BPM 조건의 곡이 부족할 경우 전체 곡에서 보충
     if (!dbSongs || dbSongs.length === 0) {
-      // 해당 조건의 DB 곡이 전혀 없을 때만 전체에서 제한적 추출
-      const { data: anySongs } = await supabase.from('songs').select('*').limit(limit);
-      return (anySongs || []).map((s: any) => ({
-        title: s.title,
-        artist: s.artist,
-        genre: s.genre || '밴드음악',
-        bpm: s.bpm || 120,
-        original_key: s.original_key || 'C Key',
-        recommended_key: '원키 유지',
-        has_live_performance: !!s.live_url,
-        has_instrument_cover: !!s.cover_url,
-        youtube_url: s.youtube_url || '',
-        reason: 'DB 보충 추천'
-      }));
+      const { data: anySongs } = await supabase.from('songs').select('*').limit(100);
+      dbSongs = anySongs || [];
     }
 
-    return dbSongs
-      .filter((s: any) => !excludeTitles.includes(s.title))
+    // 3. 보컬 성별(FEMALE / MALE) 분리 필터링
+    const targetGender = bandProfile?.vocal_gender; // 'FEMALE' | 'MALE' | 'MIXED' 등
+    const excludeSet = new Set(excludeTitles.map((t) => t.toLowerCase().trim()));
+
+    const filtered = (dbSongs || []).filter((s: any) => {
+      // (1) 기추천/제외 곡 탈락
+      if (excludeSet.has((s.title || '').toLowerCase().trim())) {
+        return false;
+      }
+
+      // (2) 보컬 성별 필터링
+      if (targetGender && targetGender !== 'ALL') {
+        const cleanArtist = (s.artist || '').toLowerCase().trim();
+        const artistGender = artistGenderMap.get(cleanArtist);
+
+        if (targetGender === 'FEMALE') {
+          // 여성 밴드 요청 시: FEMALE 또는 MIXED만 통과
+          if (artistGender !== 'FEMALE' && artistGender !== 'MIXED') return false;
+        } else if (targetGender === 'MALE') {
+          // 남성 밴드 요청 시: MALE 또는 MIXED만 통과
+          if (artistGender !== 'MALE' && artistGender !== 'MIXED') return false;
+        }
+      }
+
+      return true;
+    });
+
+    // 4. 셔플 및 limit 추출
+    return filtered
       .sort(() => Math.random() - 0.5)
       .slice(0, limit)
       .map((s: any) => ({
@@ -172,12 +205,13 @@ export async function getDbFallbackSongs(
         has_live_performance: !!s.live_url,
         has_instrument_cover: !!s.cover_url,
         youtube_url: s.youtube_url || '',
-        reason: `${category} 테마 조건 일치 곡`
+        reason: `${targetGender === 'FEMALE' ? '여성 보컬' : '남성 보컬'} 맞춤 ${category} 테마곡`,
       }));
   } catch {
     return [];
   }
 }
+
 
 // LLM에게 상세 곡 정보(실제 BPM, 세부 장르, 키, 이유)를 JSON 규격으로 생성하도록 요청
 async function generateDetailedSongsWithLLM(
