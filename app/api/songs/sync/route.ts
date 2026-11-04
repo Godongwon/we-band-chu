@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 // @ts-ignore
 import MusicTempo from 'music-tempo';
-import { AudioContext } from 'node-web-audio-api';
+// @ts-ignore
+import decode from 'audio-decode'; // 💡 사운드 드라이버 불필요한 순수 JS 디코더
+
 
 // 💡 Vercel 타임아웃 방지 설정 (직접 추가해 주는 코드입니다)
 export const maxDuration = 60; // Vercel 서버리스 실행 제한 시간을 60초로 연장
@@ -205,32 +207,18 @@ async function analyzeAudioFeatures(previewUrl?: string): Promise<{ bpm: number 
 
     const arrayBuffer = await res.arrayBuffer();
 
-    // 💡 Vercel 서버리스 네이티브 모듈 런타임 에러 방어
-    let AudioContextClass: any;
-    try {
-      const webAudio = await import('node-web-audio-api');
-      AudioContextClass = webAudio.AudioContext;
-    } catch {
-      return { bpm: null, original_key: null };
-    }
-
-    const audioContext = new AudioContextClass();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    const channelData = audioBuffer.getChannelData(0);
+    // 순수 JS로 오디오 디코딩 (리눅스 서버리스 완벽 호환)
+    const audioBuffer = await decode(arrayBuffer);
+const channelData = audioBuffer.channelData ? audioBuffer.channelData[0] : (audioBuffer as any).getChannelData?.(0);
 
     const calc = new MusicTempo(channelData);
     const tempo = Math.round(calc.tempo);
     const validBpm = tempo > 40 && tempo < 240 ? tempo : null;
     const validKey = detectKeyFromChannel(channelData, audioBuffer.sampleRate);
 
-    // AudioContext 자원 해제
-    if (audioContext.close) {
-      await audioContext.close();
-    }
-
     return { bpm: validBpm, original_key: validKey };
   } catch (err: any) {
-    console.warn('[Audio Analysis Skipped in Serverless]:', err.message);
+    console.warn('[Audio Analysis Skipped]:', err.message);
     return { bpm: null, original_key: null };
   }
 }
