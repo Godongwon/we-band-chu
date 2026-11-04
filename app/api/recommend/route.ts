@@ -33,7 +33,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ recommendations: recommendations || [] }, { status: 200 });
   } catch (error: any) {
-    console.error('[Recommend API Route Error]:', error);
+    console.error('[클라][Recommend API Route Error]:', error);
     try {
       // 💡 첫 번째 인자로 category('ALL' 등)를 전달하도록 수정
       const fallback = await getDbFallbackSongs(category, excludeTitles, 10);

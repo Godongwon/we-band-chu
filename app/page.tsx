@@ -29,10 +29,8 @@ import {
 // 1. 공통 타입 및 상수 정의
 // ==========================================
 type StatusType = 'WISHLIST' | 'PRACTICING' | 'COMPLETED' | 'PERFORMED';
-type RsvpStatus = 'ATTENDING' | 'LATE' | 'ABSENT' | 'PENDING';
 type VocalGender = 'MALE' | 'FEMALE' | 'MIXED' | 'ANY';
-
-type RecommendationCategory = 'ALL' | 'SIMILAR' | 'HIGH_TENSION' | 'PLAYING_FEEL' | 'EMOTIONAL' ;
+type RecommendationCategory = 'ALL' | 'SIMILAR' | 'HIGH_TENSION' | 'PLAYING_FEEL' | 'EMOTIONAL';
 
 interface StatusOption {
   value: StatusType;
@@ -53,7 +51,6 @@ const RECOMMEND_CATEGORIES: { id: RecommendationCategory; label: string }[] = [
   { id: 'HIGH_TENSION', label: '🔥 텐션' },
   { id: 'PLAYING_FEEL', label: '🎸 손맛' },
   { id: 'EMOTIONAL', label: '🌙 감성' },
- 
 ];
 
 const AUTO_LOGIN_KEY = 'we_band_chu_auto_login_band_id';
@@ -151,7 +148,7 @@ function PracticeModal({
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-950 text-blue-300 border border-blue-800">
-                합주 연습 준비
+                [클라] 합주 연습 준비
               </span>
               <h3 className="font-bold text-lg text-slate-100">{song.title}</h3>
               <span className="text-xs text-slate-400">({song.artist})</span>
@@ -252,6 +249,7 @@ function ConfigModal({
       .single();
 
     if (data) {
+      console.log('[클라] 밴드 구성 업데이트 완료:', data.name);
       onUpdated(data);
       onClose();
     }
@@ -263,7 +261,7 @@ function ConfigModal({
         <div className="flex justify-between items-center border-b border-slate-800 pb-3">
           <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
             <Sliders className="w-5 h-5 text-indigo-400" />
-            밴드 파트 구성 수정
+            [클라] 밴드 파트 구성 수정
           </h3>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-200">
             <X className="w-5 h-5" />
@@ -366,7 +364,6 @@ export default function Home() {
   const [isConfigModalOpen, setIsConfigModalOpen] = useState<boolean>(false);
   const [practiceModalSong, setPracticeModalSong] = useState<any>(null);
 
-  // 레퍼토리 수정 모달 상태
   const [editingRepertoireItem, setEditingRepertoireItem] = useState<any>(null);
   const [editSongTitle, setEditSongTitle] = useState<string>('');
   const [editSongArtist, setEditSongArtist] = useState<string>('');
@@ -403,11 +400,14 @@ export default function Home() {
     async function checkAutoLogin() {
       const savedBandId = localStorage.getItem(AUTO_LOGIN_KEY);
       if (savedBandId) {
+        console.log('[클라] 자동 로그인 세션 감지됨:', savedBandId);
         const { data: bandData } = await supabase.from('bands').select('*').eq('id', savedBandId).maybeSingle();
         if (bandData) {
+          console.log('[클라] 자동 로그인 성공:', bandData.name);
           setCurrentBand(bandData);
           await loadBandWorkspace(bandData);
         } else {
+          console.warn('[클라] 유효하지 않은 세션 정보로 자동 로그인 해제');
           localStorage.removeItem(AUTO_LOGIN_KEY);
         }
       }
@@ -418,13 +418,20 @@ export default function Home() {
 
   async function loadBandWorkspace(band: any) {
     setLoading(true);
+    console.log(`[클라] '${band.name}' 레퍼토리 로딩 시작`);
 
-    const { data: repData } = await supabase
+    const { data: repData, error } = await supabase
       .from('band_repertoire')
       .select(`id, song_id, status, played_key, band_notes, votes_count, songs (*)`)
       .eq('band_id', band.id)
       .order('created_at', { ascending: false });
     
+    if (error) {
+      console.error('[클라] 레퍼토리 로드 실패:', error.message);
+    } else {
+      console.log(`[클라] 레퍼토리 ${repData?.length || 0}곡 로드 완료`);
+    }
+
     const validRep = repData || [];
     setRepertoire(validRep);
 
@@ -440,6 +447,7 @@ export default function Home() {
   ) {
     if (!band) return;
     setAiLoading(true);
+    console.log(`[클라] AI 맞춤 추천 요청 (카테고리: ${category})`);
     try {
       const repertoireSongs = repList.map((r) => ({
         title: r.songs?.title,
@@ -462,32 +470,43 @@ export default function Home() {
         }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error('[클라] 추천 서버 응답 파싱 실패');
+      }
+
       if (data.recommendations) {
+        console.log(`[클라] 맞춤 추천 ${data.recommendations.length}곡 수신 완료`);
         setAiRecommendations(data.recommendations);
       }
-    } catch (err) {
-      console.error('추천 불러오기 실패:', err);
+    } catch (err: any) {
+      console.error('[클라] 추천 불러오기 실패:', err.message);
     } finally {
       setAiLoading(false);
     }
   }
 
   function handleSelectCategory(cat: RecommendationCategory) {
+    console.log(`[클라] 추천 카테고리 전환: ${cat}`);
     setSelectedCategory(cat);
     fetchRecommendations(currentBand, cat, []);
   }
 
   function handleRefreshRecommendations() {
+    console.log('[클라] 추천 피드 새로고침 트리거');
     const currentTitles = aiRecommendations.map((r) => r.title);
     fetchRecommendations(currentBand, selectedCategory, currentTitles);
   }
 
   function handleReportSong(badSong: any) {
     const songTitle = badSong.title;
-    if (!confirm(`'${songTitle} (${badSong.artist})' 곡을 잘못된 데이터(오류)로 신고하고 목록에서 제외하시겠습니까?`)) {
+    if (!confirm(`[클라] '${songTitle} (${badSong.artist})' 곡을 잘못된 데이터로 신고하고 목록에서 제외하시겠습니까?`)) {
       return;
     }
+    console.warn(`[클라] 곡 신고 및 제외 처리: ${songTitle}`);
     const updatedReported = [...reportedTitles, songTitle];
     setReportedTitles(updatedReported);
     setAiRecommendations((prev) => prev.filter((s) => s.title !== songTitle));
@@ -510,6 +529,7 @@ export default function Home() {
     }
 
     setYoutubeLoading(true);
+    console.log(`[클라] 음원 검색 실행: "${trimmed}"`);
     debounceTimerRef.current = setTimeout(async () => {
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -518,13 +538,15 @@ export default function Home() {
         const res = await fetch(`/api/youtube?q=${encodeURIComponent(trimmed)}&page=1`, {
           signal: controller.signal,
         });
-        const data = await res.json();
+        const text = await res.text();
+        const data = text ? JSON.parse(text) : {};
         if (data.items) {
+          console.log(`[클라] 음원 검색 결과 ${data.items.length}건 수신`);
           setYoutubeResults(data.items);
           setHasMoreSearch(data.hasMore || false);
         }
       } catch (err: any) {
-        if (err.name !== 'AbortError') console.error('검색 오류:', err);
+        if (err.name !== 'AbortError') console.error('[클라] 음원 검색 오류:', err);
       } finally {
         setYoutubeLoading(false);
       }
@@ -536,11 +558,13 @@ export default function Home() {
     setLoadingMore(true);
 
     const nextPage = searchPage + 1;
+    console.log(`[클라] 음원 검색 ${nextPage}페이지 추가 로드`);
     try {
       const res = await fetch(
         `/api/youtube?q=${encodeURIComponent(searchQuery.trim())}&page=${nextPage}`
       );
-      const data = await res.json();
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
       if (data.items) {
         setYoutubeResults((prev) => {
           const prevIds = new Set(prev.map((i) => i.youtubeId));
@@ -550,8 +574,8 @@ export default function Home() {
         setSearchPage(nextPage);
         setHasMoreSearch(data.hasMore || false);
       }
-    } catch (err) {
-      console.error('더보기 로드 실패:', err);
+    } catch (err: any) {
+      console.error('[클라] 음원 더보기 로드 실패:', err.message);
     } finally {
       setLoadingMore(false);
     }
@@ -560,6 +584,7 @@ export default function Home() {
   async function handleAddYouTubeSong(ytSong: any) {
     if (!currentBand) return;
     setActionLoadingId(ytSong.youtubeId);
+    console.log(`[클라] YouTube 음원 레퍼토리 담기 시작: ${ytSong.title}`);
 
     try {
       let { data: existingSong } = await supabase
@@ -624,11 +649,13 @@ export default function Home() {
         if (repErr) throw repErr;
       }
 
+      console.log(`[클라] 레퍼토리 담기 완료: ${ytSong.title}`);
       await loadBandWorkspace(currentBand);
       setIsSearchOpen(false);
       setSearchQuery('');
     } catch (err: any) {
-      alert('등록 실패: ' + err.message);
+      console.error('[클라] 곡 등록 실패:', err.message);
+      alert('[클라] 등록 실패: ' + err.message);
     } finally {
       setActionLoadingId(null);
     }
@@ -637,6 +664,7 @@ export default function Home() {
   async function handleAddAiRecommendedSong(recSong: any) {
     if (!currentBand) return;
     setActionLoadingId(recSong.title);
+    console.log(`[클라] AI 추천곡 담기 시작: ${recSong.title}`);
 
     try {
       let matchedTrack: any = null;
@@ -645,8 +673,8 @@ export default function Home() {
         const text = await searchRes.text();
         const searchData = text ? JSON.parse(text) : {};
         matchedTrack = searchData.items?.[0];
-      } catch (ytErr) {
-        console.warn('유튜브 매칭 스킵:', ytErr);
+      } catch (ytErr: any) {
+        console.warn('[클라] 유튜브 음원 매칭 스킵:', ytErr.message);
       }
 
       const finalTitle = matchedTrack?.title || recSong.title;
@@ -699,9 +727,11 @@ export default function Home() {
         if (repErr) throw repErr;
       }
 
+      console.log(`[클라] AI 추천곡 담기 완료: ${finalTitle}`);
       await loadBandWorkspace(currentBand);
     } catch (err: any) {
-      alert('추천곡 등록 실패: ' + err.message);
+      console.error('[클라] 추천곡 등록 실패:', err.message);
+      alert('[클라] 추천곡 등록 실패: ' + err.message);
     } finally {
       setActionLoadingId(null);
     }
@@ -710,6 +740,7 @@ export default function Home() {
   async function handleStatusChange(item: any, newStatus: StatusType) {
     if (item.status === newStatus) return;
 
+    console.log(`[클라] '${item.songs?.title}' 상태 변경: ${item.status} -> ${newStatus}`);
     if (item.status === 'WISHLIST' && newStatus === 'PRACTICING') {
       setPracticeModalSong(item.songs || item);
     }
@@ -726,10 +757,11 @@ export default function Home() {
     setAuthError('');
     const cleanName = inputBandName.trim();
     if (!cleanName || !inputPassword.trim()) {
-      setAuthError('밴드 이름과 비밀번호를 모두 입력해 주세요.');
+      setAuthError('[클라] 밴드 이름과 비밀번호를 모두 입력해 주세요.');
       return;
     }
 
+    console.log(`[클라] 로그인 시도: ${cleanName}`);
     const { data: bandData, error } = await supabase
       .from('bands')
       .select('*')
@@ -737,15 +769,18 @@ export default function Home() {
       .maybeSingle();
 
     if (error || !bandData) {
-      setAuthError('등록되지 않은 밴드 이름입니다.');
+      console.warn('[클라] 로그인 실패: 등록되지 않은 밴드');
+      setAuthError('[클라] 등록되지 않은 밴드 이름입니다.');
       return;
     }
 
     if (bandData.access_code && bandData.access_code !== inputPassword.trim()) {
-      setAuthError('비밀번호가 일치하지 않습니다.');
+      console.warn('[클라] 로그인 실패: 비밀번호 불일치');
+      setAuthError('[클라] 비밀번호가 일치하지 않습니다.');
       return;
     }
 
+    console.log('[클라] 로그인 성공:', bandData.name);
     localStorage.setItem(AUTO_LOGIN_KEY, bandData.id);
     setCurrentBand(bandData);
     await loadBandWorkspace(bandData);
@@ -756,10 +791,11 @@ export default function Home() {
     setAuthError('');
     const cleanName = inputBandName.trim();
     if (!cleanName || !inputPassword.trim()) {
-      setAuthError('밴드 이름과 비밀번호를 모두 입력해 주세요.');
+      setAuthError('[클라] 밴드 이름과 비밀번호를 모두 입력해 주세요.');
       return;
     }
 
+    console.log(`[클라] 신규 밴드 생성 시도: ${cleanName}`);
     const { data, error } = await supabase
       .from('bands')
       .insert({
@@ -773,11 +809,13 @@ export default function Home() {
       .single();
 
     if (error) {
-      if (error.code === '23505') setAuthError('이미 존재하는 밴드 이름입니다.');
-      else setAuthError('밴드 생성 오류: ' + error.message);
+      console.error('[클라] 밴드 생성 오류:', error.message);
+      if (error.code === '23505') setAuthError('[클라] 이미 존재하는 밴드 이름입니다.');
+      else setAuthError('[클라] 밴드 생성 오류: ' + error.message);
       return;
     }
 
+    console.log('[클라] 신규 밴드 생성 성공:', data.name);
     localStorage.setItem(AUTO_LOGIN_KEY, data.id);
     setCurrentBand(data);
     await loadBandWorkspace(data);
@@ -786,7 +824,7 @@ export default function Home() {
   if (initChecking) {
     return (
       <main className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 font-sans">
-        밴드 접속 확인 중...
+        [클라] 밴드 접속 확인 중...
       </main>
     );
   }
@@ -799,7 +837,7 @@ export default function Home() {
             <h1 className="text-3xl font-black bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
               We.Band.Chu
             </h1>
-            <p className="text-slate-400 text-xs">우리 밴드 합주곡 추천 & 워크스페이스</p>
+            <p className="text-slate-400 text-xs">[클라] 우리 밴드 합주곡 추천 & 워크스페이스</p>
           </div>
 
           <form onSubmit={isRegisterMode ? handleRegisterBand : handleLogin} className="space-y-4">
@@ -943,19 +981,10 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-2.5">
-          {/* 💡 합주 일정 버튼 UI 임시 숨김 처리 */}
-          {/* <button
-            type="button"
-            onClick={() => setIsCalendarOpen(true)}
-            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 px-3.5 py-2 rounded-xl text-xs text-amber-400 font-semibold shadow transition cursor-pointer"
-          >
-            <Calendar className="w-4 h-4 text-amber-400" />
-            {rehearsal?.title ? '합주 일정' : '일정 관리'}
-          </button> */}
-
           <button
             type="button"
             onClick={() => {
+              console.log('[클라] 로그아웃 실행');
               localStorage.removeItem(AUTO_LOGIN_KEY);
               setCurrentBand(null);
             }}
@@ -1056,7 +1085,7 @@ export default function Home() {
                         className="bg-rose-600 hover:bg-rose-500 text-white text-xs px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1 transition shadow"
                       >
                         <Plus className="w-3.5 h-3.5" />
-                        {actionLoadingId === ytSong.youtubeId ? '등록 중...' : '담기'}
+                        {actionLoadingId === ytSong.youtubeId ? '[클라] 등록 중...' : '담기'}
                       </button>
                     )}
                   </div>
@@ -1074,7 +1103,7 @@ export default function Home() {
                 >
                   {loadingMore ? (
                     <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> 다음 곡 불러오는 중...
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> [클라] 다음 곡 불러오는 중...
                     </>
                   ) : (
                     <>
@@ -1090,10 +1119,10 @@ export default function Home() {
                 {youtubeLoading ? (
                   <span className="flex items-center justify-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
-                    정식 음원 검색 중...
+                    [클라] 정식 음원 검색 중...
                   </span>
                 ) : (
-                  `'${searchQuery}'에 대한 검색 결과가 없습니다.`
+                  `[클라] '${searchQuery}'에 대한 검색 결과가 없습니다.`
                 )}
               </div>
             )}
@@ -1115,10 +1144,10 @@ export default function Home() {
           </div>
 
           {loading ? (
-            <div className="p-8 text-center text-slate-500 text-sm">레퍼토리 로드 중...</div>
+            <div className="p-8 text-center text-slate-500 text-sm">[클라] 레퍼토리 로드 중...</div>
           ) : repertoire.length === 0 ? (
             <div className="bg-slate-900/50 border border-dashed border-slate-800 p-8 rounded-2xl text-center text-slate-500 text-xs sm:text-sm">
-              등록된 곡이 없습니다. 검색창이나 오른쪽 추천 피드에서 곡을 담아보세요!
+              [클라] 등록된 곡이 없습니다. 검색창이나 오른쪽 추천 피드에서 곡을 담아보세요!
             </div>
           ) : (
             <div className="space-y-2.5">
@@ -1183,7 +1212,7 @@ export default function Home() {
                           setEditPlayedKey(item.played_key || item.songs?.original_key || 'C');
                           setEditBandNotes(item.band_notes || '');
                         }}
-                        title="곡 정보 수정 (오류 교정)"
+                        title="곡 정보 수정"
                         className="p-1.5 text-slate-500 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition"
                       >
                         <Sliders className="w-3.5 h-3.5" />
@@ -1203,7 +1232,8 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={async () => {
-                          if (!confirm('레퍼토리에서 제거하시겠습니까?')) return;
+                          if (!confirm('[클라] 레퍼토리에서 제거하시겠습니까?')) return;
+                          console.log(`[클라] 레퍼토리 삭제: ${item.songs?.title}`);
                           setRepertoire((prev) => prev.filter((r) => r.id !== item.id));
                           await supabase.from('band_repertoire').delete().eq('id', item.id);
                         }}
@@ -1285,11 +1315,11 @@ export default function Home() {
             {aiLoading ? (
               <div className="bg-slate-900/60 border border-slate-800 p-6 rounded-2xl text-center text-slate-400 text-xs flex flex-col items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
-                밴드 공연 및 커버 영상 검증 중...
+                [클라] 밴드 공연 및 커버 영상 검증 중...
               </div>
             ) : aiRecommendations.length === 0 ? (
               <div className="bg-slate-900/40 border border-dashed border-slate-800 p-6 rounded-2xl text-center text-slate-500 text-xs">
-                추천곡이 없습니다. 상단 새로고침을 눌러보세요.
+                [클라] 추천곡이 없습니다. 상단 새로고침을 눌러보세요.
               </div>
             ) : (
               aiRecommendations.map((song, idx) => {
@@ -1388,7 +1418,7 @@ export default function Home() {
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
                 <Sliders className="w-4 h-4 text-indigo-400" />
-                레퍼토리 정보 수정 (오류 교정)
+                [클라] 레퍼토리 정보 수정
               </h3>
               <button type="button" onClick={() => setEditingRepertoireItem(null)} className="text-slate-400 hover:text-slate-200">
                 <X className="w-5 h-5" />
@@ -1444,10 +1474,11 @@ export default function Home() {
                 type="button"
                 onClick={async () => {
                   if (!editSongTitle.trim()) {
-                    alert('곡 제목을 입력해 주세요.');
+                    alert('[클라] 곡 제목을 입력해 주세요.');
                     return;
                   }
 
+                  console.log(`[클라] 레퍼토리 수정 적용: ${editSongTitle}`);
                   await supabase
                     .from('songs')
                     .update({ title: editSongTitle.trim(), artist: editSongArtist.trim() })

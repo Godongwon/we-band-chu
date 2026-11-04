@@ -126,16 +126,16 @@ async function fetchTracksFromITunes(
 
       if (candidates.length > 0) {
         console.log(
-          `[iTunes Search Success] "${artist}" (검색어: "${term}") 정식 음원 ${candidates.length}곡 탐색 완료`
+          `[관리자][iTunes Search Success] "${artist}" (검색어: "${term}") 정식 음원 ${candidates.length}곡 탐색 완료`
         );
         return candidates;
       }
     } catch (err: any) {
-      console.warn(`[iTunes Search Try Fail] ${term}:`, err.message);
+      console.warn(`[관리자][iTunes Search Try Fail] ${term}:`, err.message);
     }
   }
 
-  console.log(`[iTunes Search] 음원을 찾지 못함: "${artist}"`);
+  console.log(`[관리자][iTunes Search] 음원을 찾지 못함: "${artist}"`);
   return [];
 }
 
@@ -218,7 +218,7 @@ const channelData = audioBuffer.channelData ? audioBuffer.channelData[0] : (audi
 
     return { bpm: validBpm, original_key: validKey };
   } catch (err: any) {
-    console.warn('[Audio Analysis Skipped]:', err.message);
+    console.warn('[관리자][Audio Analysis Skipped]:', err.message);
     return { bpm: null, original_key: null };
   }
 }
@@ -266,7 +266,7 @@ async function verifyAndFetchOfficialAudio(
         data.error.code === 403 ||
         data.error.errors?.some((e: any) => e.reason === 'quotaExceeded')
       ) {
-        console.error('[YouTube API Error] 일일 쿼터 소진 감지!');
+        console.error('[관리자][YouTube API Error] 일일 쿼터 소진 감지!');
         setQuotaExceeded(true);
       }
       return null;
@@ -324,7 +324,7 @@ export async function runArtistHarvestBatch(): Promise<{
     .limit(1);
 
   if (artistError || !activeArtists || activeArtists.length === 0) {
-    console.log('[AutoHarvest] 활성화된 수집 대상 아티스트가 없습니다.');
+    console.log('[관리자][AutoHarvest] 활성화된 수집 대상 아티스트가 없습니다.');
     return { success: false, artist: '활성 아티스트 없음', count: 0 };
   }
 
@@ -334,7 +334,7 @@ export async function runArtistHarvestBatch(): Promise<{
   const ytApiKey = process.env.YOUTUBE_API_KEY || '';
 
   isHarvestingRunning = true;
-  console.log(`[AutoHarvest] >>> [BPM + Key 동시 실측 수집 시작] "${targetArtist}" (별칭: ${searchAlias || '없음'})`);
+  console.log(`[관리자][AutoHarvest] >>> [BPM + Key 동시 실측 수집 시작] "${targetArtist}" (별칭: ${searchAlias || '없음'})`);
 
   let savedCount = 0;
 
@@ -355,11 +355,11 @@ export async function runArtistHarvestBatch(): Promise<{
     );
 
     console.log(
-      `[AutoHarvest] "${targetArtist}" 전곡 ${itunesTracks.length}곡 중 신규 미등록 ${newTracksToProcess.length}곡 발견`
+      `[관리자][AutoHarvest] "${targetArtist}" 전곡 ${itunesTracks.length}곡 중 신규 미등록 ${newTracksToProcess.length}곡 발견`
     );
 
     if (newTracksToProcess.length === 0) {
-      console.log(`[AutoHarvest] "${targetArtist}"의 모든 곡이 이미 DB에 등록되어 있습니다.`);
+      console.log(`[관리자][AutoHarvest] "${targetArtist}"의 모든 곡이 이미 DB에 등록되어 있습니다.`);
       await supabase
         .from('target_artists')
         .update({ last_harvested_at: new Date().toISOString() })
@@ -406,10 +406,10 @@ export async function runArtistHarvestBatch(): Promise<{
         existingTitleSet.add(cleanTitle.toLowerCase());
         const bpmDisplay = bpm ? `${bpm}` : '측정 불가';
         console.log(
-          `[AutoHarvest DB 적재] (${savedCount}/${newTracksToProcess.length}) ${targetArtist} - ${cleanTitle} [BPM: ${bpmDisplay}, Key: ${original_key}, 장르: ${track.defaultGenre}] (음원URL: ${officialAudioUrl ? 'O' : 'X'})`
+          `[관리자][AutoHarvest DB 적재] (${savedCount}/${newTracksToProcess.length}) ${targetArtist} - ${cleanTitle} [BPM: ${bpmDisplay}, Key: ${original_key}, 장르: ${track.defaultGenre}] (음원URL: ${officialAudioUrl ? 'O' : 'X'})`
         );
       } else {
-        console.error(`[AutoHarvest DB Error]:`, songError.message);
+        console.error(`[관리자][AutoHarvest DB Error]:`, songError.message);
       }
     }
 
@@ -420,7 +420,7 @@ export async function runArtistHarvestBatch(): Promise<{
 
     return { success: true, artist: targetArtist, count: savedCount };
   } catch (err: any) {
-    console.error(`[AutoHarvest Error]:`, err);
+    console.error(`[관리자][AutoHarvest Error]:`, err);
     return { success: false, artist: targetArtist, count: savedCount };
   } finally {
     isHarvestingRunning = false;
@@ -432,7 +432,7 @@ export async function runArtistHarvestBatch(): Promise<{
 // ========================================================
 if (!globalThis.__artistHarvestInterval) {
   console.log(
-    `[AutoHarvest] BPM 및 Key 동시 실측 수집 워커 가동됨. (주기: ${
+    `[관리자][AutoHarvest] BPM 및 Key 동시 실측 수집 워커 가동됨. (주기: ${
       HARVEST_INTERVAL_MS / 1000
     }초)`
   );
