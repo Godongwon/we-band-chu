@@ -68,6 +68,38 @@ interface ITunesTrack {
   previewUrl?: string;
 }
 
+// 💡 1. 밴드 합주에 부적합한 iTunes 기본 장르 배제 목록
+const EXCLUDED_GENRES = [
+  'Dance',
+  'Electronic',
+  'Hip-Hop/Rap',
+  'R&B/Soul',
+  'Trot',
+  'Children\'s Music',
+  'Classical',
+  'Soundtrack'
+];
+
+// 💡 2. 리믹스, EDM, 외주 참여곡 등 비밴드 트랙 키워드 배제 목록
+const EXCLUDED_TITLE_KEYWORDS = [
+  'remix',
+  '리믹스',
+  'club mix',
+  'edm',
+  'original soundtrack',
+  'soundtrack',
+  'ost part',
+  'ost ver',
+  '드라마 ost',
+  '게임 ost',
+  'orchestra',
+  'piano ver',
+  'acoustic ver',
+  'inst.',
+  'instrumental',
+  'karaoke'
+];
+
 async function fetchTracksFromITunes(
   artist: string,
   searchAlias?: string | null
@@ -97,6 +129,21 @@ async function fetchTracksFromITunes(
       for (const item of data.results as ITunesTrack[]) {
         if (!item.trackName) continue;
 
+        // 💡 1. 비밴드 장르 1차 필터링
+        const itemGenre = item.primaryGenreName || '';
+        const isExcludedGenre = EXCLUDED_GENRES.some((eg) =>
+          itemGenre.toLowerCase().includes(eg.toLowerCase())
+        );
+        if (isExcludedGenre) continue;
+
+        // 💡 2. 제목 기반 리믹스 / 외주 OST / 일렉트로닉 트랙 배제
+        const lowerRawTitle = item.trackName.toLowerCase();
+        const isExcludedTitle = EXCLUDED_TITLE_KEYWORDS.some((kw) =>
+          lowerRawTitle.includes(kw)
+        );
+        if (isExcludedTitle) continue;
+
+        // 💡 3. 아티스트 일치 여부 확인 (타 아티스트 피처링 단독 음원 오수집 방지)
         const itemArtistClean = (item.artistName || '').toLowerCase().replace(/\s+/g, '');
 
         const isMatched =
@@ -106,6 +153,7 @@ async function fetchTracksFromITunes(
 
         if (!isMatched) continue;
 
+        // 불필요한 태그 제거 및 곡명 정제
         let cleanTitle = item.trackName
           .replace(/\(.*?(Inst|MR|Remaster|Live|Ver\.|Version|Track|Instrumental).*?\)/gi, '')
           .replace(/\[.*?(Inst|MR|Remaster|Live|Ver\.|Version|Track|Instrumental).*?\]/gi, '')
@@ -124,7 +172,7 @@ async function fetchTracksFromITunes(
 
       if (candidates.length > 0) {
         console.log(
-          `[관리자][iTunes Search Success] "${artist}" (검색어: "${term}") 정식 음원 ${candidates.length}곡 탐색 완료`
+          `[관리자][iTunes Search Success] "${artist}" (검색어: "${term}") 정식 밴드 음원 ${candidates.length}곡 탐색 완료`
         );
         return candidates;
       }
@@ -133,7 +181,7 @@ async function fetchTracksFromITunes(
     }
   }
 
-  console.log(`[관리자][iTunes Search] 음원을 찾지 못함: "${artist}"`);
+  console.log(`[관리자][iTunes Search] 밴드 규격 음원을 찾지 못함: "${artist}"`);
   return [];
 }
 
