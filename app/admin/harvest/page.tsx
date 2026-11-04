@@ -17,7 +17,8 @@ import {
   Sliders,
   Filter,
   Plus,
-  X
+  X,
+  Clock
 } from 'lucide-react';
 
 interface HarvestStatus {
@@ -69,9 +70,9 @@ export default function HarvestAdminPage() {
   const [searchSongQuery, setSearchSongQuery] = useState<string>('');
   const [isBackfilling, setIsBackfilling] = useState<boolean>(false);
 
+  // 수집 대상 밴드 신규 등록 모달 상태
   const [isAddArtistOpen, setIsAddArtistOpen] = useState<boolean>(false);
   const [newArtistName, setNewArtistName] = useState<string>('');
-  const [newArtistAlias, setNewArtistAlias] = useState<string>('');
   const [newArtistPriority, setNewArtistPriority] = useState<number>(1);
   const [addingArtist, setAddingArtist] = useState<boolean>(false);
 
@@ -188,7 +189,6 @@ export default function HarvestAdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newArtistName.trim(),
-          search_alias: newArtistAlias.trim() || null,
           priority: Number(newArtistPriority) || 1,
         }),
       });
@@ -197,10 +197,9 @@ export default function HarvestAdminPage() {
       const data = text ? JSON.parse(text) : {};
 
       if (res.ok && data.success) {
-        setLastMessage(`'${newArtistName}' 수집 큐 등록 완료`);
+        setLastMessage(`'${newArtistName}' 수집 큐 등록 완료 (LLM 자동 매칭)`);
         console.log(`[관리자] '${newArtistName}' 수집 큐 등록 성공`);
         setNewArtistName('');
-        setNewArtistAlias('');
         setNewArtistPriority(1);
         setIsAddArtistOpen(false);
         await fetchArtists();
@@ -386,8 +385,8 @@ export default function HarvestAdminPage() {
           </div>
         )}
 
-        {/* 핵심 통계 지표 카드 */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {/* 💡 핵심 통계 지표 카드 (마지막 갱신 시간 카드 추가) */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
             <span className="text-xs text-slate-400 block mb-1">총 수집 곡수</span>
             <span className="text-2xl font-black text-slate-100">{status?.totalSongs ?? '-'}곡</span>
@@ -412,6 +411,25 @@ export default function HarvestAdminPage() {
             <span className="text-2xl font-black text-purple-400">
               {status?.totalSongs ? Math.round(((status.analyzedKeyCount || 0) / status.totalSongs) * 100) : 0}%
             </span>
+          </div>
+
+          {/* 💡 최근 수집/갱신 실행 시간 카드 */}
+          <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl col-span-2 sm:col-span-1">
+            <span className="text-xs text-slate-400 block mb-1 flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-indigo-400" /> 마지막 갱신
+            </span>
+            {status?.lastExecution ? (
+              <div>
+                <span className="text-sm font-bold text-slate-100 block truncate">
+                  {new Date(status.lastExecution.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+                <span className="text-[10px] text-indigo-400 block truncate mt-0.5">
+                  {status.lastExecution.artist} ({status.lastExecution.count}곡)
+                </span>
+              </div>
+            ) : (
+              <span className="text-sm font-bold text-slate-500">기록 없음</span>
+            )}
           </div>
         </div>
 
@@ -523,7 +541,6 @@ export default function HarvestAdminPage() {
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      {/* BPM 뱃지 */}
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
                         song.bpm 
                           ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800' 
@@ -532,7 +549,6 @@ export default function HarvestAdminPage() {
                         {song.bpm ? `${song.bpm} BPM` : 'BPM 분석 대기'}
                       </span>
 
-                      {/* Key 뱃지 */}
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
                         song.original_key 
                           ? 'bg-purple-950/80 text-purple-300 border-purple-800' 
@@ -593,21 +609,8 @@ export default function HarvestAdminPage() {
                   placeholder="예: 잔나비, 터치드, QWER..."
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-indigo-500"
                 />
-              </div>
-
-              <div>
-                <label className="text-slate-300 font-semibold block mb-1">
-                  iTunes 검색 별칭 (선택 사항)
-                </label>
-                <input
-                  type="text"
-                  value={newArtistAlias}
-                  onChange={(e) => setNewArtistAlias(e.target.value)}
-                  placeholder="예: JANNABI (영문명 또는 특정 검색어)"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-indigo-500"
-                />
-                <span className="text-[11px] text-slate-500 mt-1 block">
-                  입력하지 않으면 밴드명 그대로 iTunes 음원을 검색합니다.
+                <span className="text-[11px] text-slate-500 mt-1.5 block">
+                  💡 영문 표기 및 음원 검색용 별칭은 LLM이 자동으로 분석하여 매칭합니다.
                 </span>
               </div>
 
