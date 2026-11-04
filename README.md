@@ -37,4 +37,4 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## For API
 
-https://getsongbpm.com/
+Powered by [GetSongBPM.com](https://getsongbpm.com)
