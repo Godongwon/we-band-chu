@@ -3,11 +3,9 @@ import { supabase } from '@/lib/supabaseClient';
 // @ts-ignore
 import MusicTempo from 'music-tempo';
 // @ts-ignore
-import decode from 'audio-decode'; // 💡 사운드 드라이버 불필요한 순수 JS 디코더
+import decode from 'audio-decode'; // 사운드 드라이버 불필요한 순수 JS 디코더
 
-
-// 💡 Vercel 타임아웃 방지 설정 (직접 추가해 주는 코드입니다)
-export const maxDuration = 60; // Vercel 서버리스 실행 제한 시간을 60초로 연장
+export const maxDuration = 60; // Vercel 서버리스 실행 제한 시간 60초 연장
 
 // ========================================================
 // 1. 수집 설정 및 전역 쿼터 모니터링 (싱글톤)
@@ -160,10 +158,9 @@ function correlate(data: number[], profile: number[]): number {
   return den1 && den2 ? num / Math.sqrt(den1 * den2) : 0;
 }
 
-
 function detectKeyFromChannel(channelData: Float32Array, sampleRate: number): string | null {
   const chroma = new Array(12).fill(0);
-  const step = Math.floor(sampleRate / 4); // 0.25초 간격 샘플링
+  const step = Math.floor(sampleRate / 4);
 
   for (let i = 0; i < channelData.length - 2048; i += step) {
     let energy = 0;
@@ -180,22 +177,20 @@ function detectKeyFromChannel(channelData: Float32Array, sampleRate: number): st
   for (let shift = 0; shift < 12; shift++) {
     const shifted = [...chroma.slice(shift), ...chroma.slice(0, shift)];
     
-    // 메이저 판별 (예: C, E, F#, B)
     const majorCorr = correlate(shifted, MAJOR_PROFILE);
     if (majorCorr > maxCorr) {
       maxCorr = majorCorr;
-      bestKey = `${PITCH_NAMES[shift]}`; // Major는 깔끔하게 음계명만 (예: E, B)
+      bestKey = `${PITCH_NAMES[shift]}`;
     }
 
-    // 마이너 판별 (예: C#m, Am, F#m)
     const minorCorr = correlate(shifted, MINOR_PROFILE);
     if (minorCorr > maxCorr) {
       maxCorr = minorCorr;
-      bestKey = `${PITCH_NAMES[shift]}m`; // Minor는 소문자 m 추가 (예: C#m)
+      bestKey = `${PITCH_NAMES[shift]}m`;
     }
   }
 
-  return bestKey; // 미검출 시 null 반환
+  return bestKey;
 }
 
 async function analyzeAudioFeatures(previewUrl?: string): Promise<{ bpm: number | null; original_key: string | null }> {
@@ -206,10 +201,8 @@ async function analyzeAudioFeatures(previewUrl?: string): Promise<{ bpm: number 
     if (!res.ok) return { bpm: null, original_key: null };
 
     const arrayBuffer = await res.arrayBuffer();
-
-    // 순수 JS로 오디오 디코딩 (리눅스 서버리스 완벽 호환)
     const audioBuffer = await decode(arrayBuffer);
-const channelData = audioBuffer.channelData ? audioBuffer.channelData[0] : (audioBuffer as any).getChannelData?.(0);
+    const channelData = audioBuffer.channelData ? audioBuffer.channelData[0] : (audioBuffer as any).getChannelData?.(0);
 
     const calc = new MusicTempo(channelData);
     const tempo = Math.round(calc.tempo);
@@ -305,8 +298,17 @@ async function verifyAndFetchOfficialAudio(
 }
 
 // ========================================================
-// 5. 단일 밴드 배치 수집 실행기 (BPM + Key 동시 분석)
+// 5. 단일 밴드 배치 수집 실행기 (has_keys, vocal_gender 반영)
 // ========================================================
+interface TargetArtistRow {
+  id: string;
+  name: string;
+  search_alias: string | null;
+  last_harvested_at: string | null;
+  has_keys?: boolean | null;
+  vocal_gender?: string | null;
+}
+
 export async function runArtistHarvestBatch(): Promise<{
   success: boolean;
   artist: string;
@@ -316,9 +318,10 @@ export async function runArtistHarvestBatch(): Promise<{
     return { success: false, artist: '대기 중 (이미 작업 중)', count: 0 };
   }
 
+  // 💡 has_keys, vocal_gender 필드를 명시적으로 조회하여 TS 에러를 방지합니다.
   const { data: activeArtists, error: artistError } = await supabase
     .from('target_artists')
-    .select('id, name, search_alias, last_harvested_at')
+    .select('id, name, search_alias, last_harvested_at, has_keys, vocal_gender')
     .eq('is_active', true)
     .order('last_harvested_at', { ascending: true, nullsFirst: true })
     .limit(1);
@@ -328,13 +331,13 @@ export async function runArtistHarvestBatch(): Promise<{
     return { success: false, artist: '활성 아티스트 없음', count: 0 };
   }
 
-  const currentTarget = activeArtists[0];
+  const currentTarget = activeArtists[0] as TargetArtistRow;
   const targetArtist = currentTarget.name;
   const searchAlias = currentTarget.search_alias;
   const ytApiKey = process.env.YOUTUBE_API_KEY || '';
 
   isHarvestingRunning = true;
-  console.log(`[관리자][AutoHarvest] >>> [BPM + Key 동시 실측 수집 시작] "${targetArtist}" (별칭: ${searchAlias || '없음'})`);
+  console.log(`[관리자][AutoHarvest] >>> [BPM + Key 실측 수집 시작] "${targetArtist}" (별칭: ${searchAlias || '없음'}, 건반: ${currentTarget.has_keys ? 'O' : 'X'})`);
 
   let savedCount = 0;
 
@@ -368,13 +371,14 @@ export async function runArtistHarvestBatch(): Promise<{
       return { success: true, artist: targetArtist, count: 0 };
     }
 
+    // 💡 밴드에 건반이 없으면 기타로 완벽 커버 가능한 곡(keys_coverable = true)으로 매핑
+    const isKeysCoverable = !currentTarget.has_keys;
+
     for (const track of newTracksToProcess) {
       const cleanTitle = track.title.trim();
 
-      // 30초 오디오 파형에서 BPM과 Key를 단일 디코딩으로 동시 계산
       const { bpm, original_key } = await analyzeAudioFeatures(track.previewUrl);
 
-      // 유튜브 음원 URL 연결
       let officialAudioUrl: string | null = null;
       if (!globalThis.__youtubeQuotaExceeded && ytApiKey) {
         officialAudioUrl = await verifyAndFetchOfficialAudio(
@@ -384,7 +388,6 @@ export async function runArtistHarvestBatch(): Promise<{
         );
       }
 
-      // Supabase 적재 (artist, title 복합 제약조건 충돌 방지)
       const { error: songError } = await supabase.from('songs').upsert(
         {
           title: cleanTitle,
@@ -393,6 +396,7 @@ export async function runArtistHarvestBatch(): Promise<{
           genre: track.defaultGenre || '밴드음악',
           bpm: bpm,
           original_key: original_key,
+          keys_coverable: isKeysCoverable,
           youtube_url: officialAudioUrl,
           live_url: null,
           cover_url: null,
@@ -406,7 +410,7 @@ export async function runArtistHarvestBatch(): Promise<{
         existingTitleSet.add(cleanTitle.toLowerCase());
         const bpmDisplay = bpm ? `${bpm}` : '측정 불가';
         console.log(
-          `[관리자][AutoHarvest DB 적재] (${savedCount}/${newTracksToProcess.length}) ${targetArtist} - ${cleanTitle} [BPM: ${bpmDisplay}, Key: ${original_key}, 장르: ${track.defaultGenre}] (음원URL: ${officialAudioUrl ? 'O' : 'X'})`
+          `[관리자][AutoHarvest DB 적재] (${savedCount}/${newTracksToProcess.length}) ${targetArtist} - ${cleanTitle} [BPM: ${bpmDisplay}, Key: ${original_key}] (음원URL: ${officialAudioUrl ? 'O' : 'X'})`
         );
       } else {
         console.error(`[관리자][AutoHarvest DB Error]:`, songError.message);
@@ -432,9 +436,7 @@ export async function runArtistHarvestBatch(): Promise<{
 // ========================================================
 if (!globalThis.__artistHarvestInterval) {
   console.log(
-    `[관리자][AutoHarvest] BPM 및 Key 동시 실측 수집 워커 가동됨. (주기: ${
-      HARVEST_INTERVAL_MS / 1000
-    }초)`
+    `[관리자][AutoHarvest] 워커 가동됨. (주기: ${HARVEST_INTERVAL_MS / 1000}초)`
   );
 
   setTimeout(() => {
@@ -447,14 +449,22 @@ if (!globalThis.__artistHarvestInterval) {
 }
 
 // ========================================================
-// 7. API Route 핸들러
+// 7. API Route 핸들러 (관리자 대시보드 호환 응답 규격)
 // ========================================================
 export async function GET(req: Request) {
   const result = await runArtistHarvestBatch();
+
   return NextResponse.json({
-    message: 'iTunes 전곡 + previewUrl 실측 BPM 및 Key 파이프라인 가동 중',
+    success: result.success,
+    message: result.success
+      ? `'${result.artist}' ${result.count}곡 수집/분석 갱신 완료`
+      : '수집 실행 중 오류가 발생했거나 대기 중입니다.',
     intervalMs: HARVEST_INTERVAL_MS,
-    lastExecution: result,
+    lastExecution: {
+      artist: result.artist,
+      count: result.count,
+      time: new Date().toISOString(),
+    },
     quota: getQuotaStatus(),
   });
 }

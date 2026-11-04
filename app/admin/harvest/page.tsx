@@ -18,7 +18,8 @@ import {
   Filter,
   Plus,
   X,
-  Clock
+  Clock,
+  Trash2
 } from 'lucide-react';
 
 interface HarvestStatus {
@@ -216,6 +217,36 @@ export default function HarvestAdminPage() {
     }
   }
 
+  async function handleDeleteArtist(e: React.MouseEvent, artist: TargetArtist) {
+    e.stopPropagation();
+    if (!confirm(`수집 대상 밴드 '${artist.name}'을(를) 삭제하시겠습니까?`)) return;
+
+    console.log(`[관리자] 수집 대상 밴드 삭제 요청: ${artist.name}`);
+    try {
+      const res = await fetch(`/api/artists?id=${artist.id}`, {
+        method: 'DELETE',
+      });
+
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
+
+      if (res.ok && data.success) {
+        console.log(`[관리자] '${artist.name}' 삭제 완료`);
+        setLastMessage(`'${artist.name}' 수집 대상에서 삭제 완료`);
+        if (selectedArtist === artist.name) {
+          setSelectedArtist('ALL');
+        }
+        await fetchArtists();
+        await fetchStatus();
+      } else {
+        alert(`밴드 삭제 실패: ${data.message || data.error || `HTTP ${res.status}`}`);
+      }
+    } catch (err: any) {
+      console.error('[관리자] 밴드 삭제 통신 에러:', err.message);
+      alert(`삭제 오류: ${err.message}`);
+    }
+  }
+
   async function handleTriggerNow() {
     setTriggering(true);
     setLastMessage('다음 아티스트 곡 수집 및 실측 오디오 분석 중...');
@@ -385,7 +416,7 @@ export default function HarvestAdminPage() {
           </div>
         )}
 
-        {/* 💡 핵심 통계 지표 카드 (마지막 갱신 시간 카드 추가) */}
+        {/* 핵심 통계 지표 카드 */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
             <span className="text-xs text-slate-400 block mb-1">총 수집 곡수</span>
@@ -413,7 +444,6 @@ export default function HarvestAdminPage() {
             </span>
           </div>
 
-          {/* 💡 최근 수집/갱신 실행 시간 카드 */}
           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl col-span-2 sm:col-span-1">
             <span className="text-xs text-slate-400 block mb-1 flex items-center gap-1">
               <Clock className="w-3.5 h-3.5 text-indigo-400" /> 마지막 갱신
@@ -433,7 +463,7 @@ export default function HarvestAdminPage() {
           </div>
         </div>
 
-        {/* 2열 메인 레이아웃: 아티스트 목록 및 전체 수집 곡 스크롤뷰 */}
+        {/* 2열 메인 레이아웃 */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           
           {/* 좌측: 수집 대상 아티스트 큐 */}
@@ -471,24 +501,35 @@ export default function HarvestAdminPage() {
                   <div
                     key={artist.id}
                     onClick={() => setSelectedArtist(isSelected ? 'ALL' : artist.name)}
-                    className={`p-2.5 rounded-xl border text-xs cursor-pointer transition flex items-center justify-between ${
+                    className={`p-2.5 rounded-xl border text-xs cursor-pointer transition flex items-center justify-between group ${
                       isSelected 
                         ? 'bg-indigo-950/70 border-indigo-700 text-indigo-200' 
                         : 'bg-slate-950/50 border-slate-800/80 hover:border-slate-700 text-slate-300'
                     }`}
                   >
-                    <div>
-                      <span className="font-bold block">{artist.name}</span>
-                      <span className="text-[10px] text-slate-500">
+                    <div className="min-w-0 flex-1 pr-2">
+                      <span className="font-bold block truncate">{artist.name}</span>
+                      <span className="text-[10px] text-slate-500 block truncate">
                         {artist.last_harvested_at 
-                          ? `최근 수집: ${new Date(artist.last_harvested_at).toLocaleDateString()}` 
+                          ? `최근 수집: ${new Date(artist.last_harvested_at).toLocaleDateString()}`
                           : '아직 수집되지 않음'}
                       </span>
                     </div>
 
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400">
-                      우선순위 {artist.priority}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 font-medium">
+                        {artist.priority}순위
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteArtist(e, artist)}
+                        title={`'${artist.name}' 수집 대상에서 삭제`}
+                        className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900/80 text-rose-400 hover:text-rose-200 border border-rose-800/80 transition shadow-sm"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
