@@ -4,22 +4,19 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { 
   Database, 
   RefreshCw, 
-  Activity, 
   Music2, 
-  Calendar, 
   Radio, 
   Lock, 
-  AlertCircle, 
-  CheckCircle2, 
   Sparkles, 
-  Search,
-  ExternalLink,
-  Sliders,
-  Filter,
-  Plus,
-  X,
-  Clock,
-  Trash2
+  Search, 
+  ExternalLink, 
+  Plus, 
+  X, 
+  Clock, 
+  Trash2, 
+  ShieldAlert,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 
 interface TargetArtist {
@@ -51,19 +48,21 @@ export default function HarvestAdminPage() {
   const [songs, setSongs] = useState<SongItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [triggering, setTriggering] = useState<boolean>(false);
+  const [isCleaning, setIsCleaning] = useState<boolean>(false);
+  const [isDeletingSelected, setIsDeletingSelected] = useState<boolean>(false);
   const [lastMessage, setLastMessage] = useState<string>('');
 
   const [selectedArtist, setSelectedArtist] = useState<string>('ALL');
   const [searchSongQuery, setSearchSongQuery] = useState<string>('');
   const [isBackfilling, setIsBackfilling] = useState<boolean>(false);
 
-  // 수집 대상 밴드 신규 등록 모달 상태
+  const [selectedSongIds, setSelectedSongIds] = useState<Set<string>>(new Set());
+
   const [isAddArtistOpen, setIsAddArtistOpen] = useState<boolean>(false);
   const [newArtistName, setNewArtistName] = useState<string>('');
   const [newArtistPriority, setNewArtistPriority] = useState<number>(1);
   const [addingArtist, setAddingArtist] = useState<boolean>(false);
 
-  // 💡 로드된 songs와 artists로부터 상단 핵심 지표를 즉시 산출 (별도 통계 API 의존 제거)
   const stats = useMemo(() => {
     const totalSongs = songs.length;
     const totalArtists = artists.length;
@@ -75,7 +74,6 @@ export default function HarvestAdminPage() {
     const bpmRate = totalSongs > 0 ? Math.round((analyzedBpmCount / totalSongs) * 100) : 0;
     const keyRate = totalSongs > 0 ? Math.round((analyzedKeyCount / totalSongs) * 100) : 0;
 
-    // 가장 최근 수집된 아티스트 계산
     const harvestedArtists = artists
       .filter((a) => a.last_harvested_at)
       .sort((a, b) => new Date(b.last_harvested_at!).getTime() - new Date(a.last_harvested_at!).getTime());
@@ -106,7 +104,6 @@ export default function HarvestAdminPage() {
   useEffect(() => {
     const savedAuth = sessionStorage.getItem('admin_authenticated');
     if (savedAuth === 'true') {
-      console.log('[관리자] 기존 세션 인증 확인됨');
       setIsAuthenticated(true);
     }
   }, []);
@@ -118,7 +115,6 @@ export default function HarvestAdminPage() {
     fetchSongs();
 
     const interval = setInterval(() => {
-      console.log('[관리자] 실시간 수집 현황 자동 폴링 (주기: 15초)');
       fetchArtists();
       fetchSongs();
     }, 15000);
@@ -129,7 +125,6 @@ export default function HarvestAdminPage() {
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault();
     setAuthError('');
-    console.log('[관리자] 비밀번호 인증 요청');
 
     try {
       const res = await fetch('/api/admin/verify', {
@@ -142,15 +137,12 @@ export default function HarvestAdminPage() {
       const data = text ? JSON.parse(text) : {};
 
       if (res.ok && data.success) {
-        console.log('[관리자] 인증 승인 완료');
         setIsAuthenticated(true);
         sessionStorage.setItem('admin_authenticated', 'true');
       } else {
-        console.warn('[관리자] 인증 실패:', data.message || '인증 오류');
         setAuthError(data.message || '인증에 실패했습니다.');
       }
     } catch (err: any) {
-      console.error('[관리자] 인증 통신 에러:', err.message);
       setAuthError(`통신 에러: ${err.message}`);
     }
   }
@@ -184,6 +176,108 @@ export default function HarvestAdminPage() {
     }
   }
 
+  async function handleCleanupNonBand() {
+    if (!confirm('Classical, Dance, Electronic, OST 등 밴드 합주에 부적합한 음원을 일괄 검사하여 삭제하시겠습니까?')) return;
+
+    setIsCleaning(true);
+    setLastMessage('비밴드 장르 음원 검증 및 정리 중...');
+
+    try {
+      const res = await fetch('/api/songs/cleanup', { method: 'POST' });
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
+
+      if (res.ok && data.success) {
+        const msg = data.message || `${data.deletedCount || 0}곡 정리 완료`;
+        setLastMessage(msg);
+        setSelectedSongIds(new Set());
+        await fetchSongs();
+      } else {
+        setLastMessage(`정리 실패: ${data.error || data.message || `HTTP ${res.status}`}`);
+      }
+    } catch (err: any) {
+      setLastMessage(`정리 오류: ${err.message}`);
+    } finally {
+      setIsCleaning(false);
+    }
+  }
+
+  async function handleDeleteSong(e: React.MouseEvent, song: SongItem) {
+    e.stopPropagation();
+    if (!confirm(`'${song.title} (${song.artist})' 곡을 DB에서 삭제하시겠습니까?`)) return;
+
+    try {
+      const res = await fetch(`/api/songs?id=${song.id}`, { method: 'DELETE' });
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
+
+      if (res.ok && data.success) {
+        setLastMessage(`'${song.title}' 곡이 삭제되었습니다.`);
+        setSongs((prev) => prev.filter((s) => s.id !== song.id));
+        setSelectedSongIds((prev) => {
+          const next = new Set(prev);
+          next.delete(song.id);
+          return next;
+        });
+      } else {
+        alert(`곡 삭제 실패: ${data.message || data.error || `HTTP ${res.status}`}`);
+      }
+    } catch (err: any) {
+      alert(`곡 삭제 오류: ${err.message}`);
+    }
+  }
+
+  async function handleDeleteSelectedSongs() {
+    if (selectedSongIds.size === 0) return;
+    if (!confirm(`선택한 ${selectedSongIds.size}개의 곡을 영구 삭제하시겠습니까?`)) return;
+
+    setIsDeletingSelected(true);
+    setLastMessage(`선택한 ${selectedSongIds.size}곡 일괄 삭제 진행 중...`);
+
+    try {
+      const res = await fetch('/api/songs', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedSongIds) }),
+      });
+
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
+
+      if (res.ok && data.success) {
+        setLastMessage(`선택한 ${selectedSongIds.size}곡이 모두 삭제되었습니다.`);
+        setSongs((prev) => prev.filter((s) => !selectedSongIds.has(s.id)));
+        setSelectedSongIds(new Set());
+      } else {
+        alert(`일괄 삭제 실패: ${data.message || data.error || `HTTP ${res.status}`}`);
+      }
+    } catch (err: any) {
+      alert(`일괄 삭제 오류: ${err.message}`);
+    } finally {
+      setIsDeletingSelected(false);
+    }
+  }
+
+  function toggleSongSelection(songId: string) {
+    setSelectedSongIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(songId)) {
+        next.delete(songId);
+      } else {
+        next.add(songId);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectAll(currentFilteredSongs: SongItem[]) {
+    if (selectedSongIds.size === currentFilteredSongs.length && currentFilteredSongs.length > 0) {
+      setSelectedSongIds(new Set());
+    } else {
+      setSelectedSongIds(new Set(currentFilteredSongs.map((s) => s.id)));
+    }
+  }
+
   async function handleAddTargetArtist(e: React.FormEvent) {
     e.preventDefault();
     if (!newArtistName.trim()) {
@@ -192,7 +286,6 @@ export default function HarvestAdminPage() {
     }
 
     setAddingArtist(true);
-    console.log(`[관리자] 수집 대상 밴드 추가: ${newArtistName}`);
 
     try {
       const res = await fetch('/api/artists', {
@@ -209,17 +302,14 @@ export default function HarvestAdminPage() {
 
       if (res.ok && data.success) {
         setLastMessage(`'${newArtistName}' 수집 큐 등록 완료 (LLM 자동 매칭)`);
-        console.log(`[관리자] '${newArtistName}' 수집 큐 등록 성공`);
         setNewArtistName('');
         setNewArtistPriority(1);
         setIsAddArtistOpen(false);
         await fetchArtists();
       } else {
-        console.error('[관리자] 밴드 등록 실패:', data.message || data.error);
         alert(`밴드 등록 실패: ${data.message || data.error || `HTTP ${res.status}`}`);
       }
     } catch (err: any) {
-      console.error('[관리자] 밴드 추가 통신 에러:', err.message);
       alert(`통신 오류: ${err.message}`);
     } finally {
       setAddingArtist(false);
@@ -230,17 +320,12 @@ export default function HarvestAdminPage() {
     e.stopPropagation();
     if (!confirm(`수집 대상 밴드 '${artist.name}'을(를) 삭제하시겠습니까?`)) return;
 
-    console.log(`[관리자] 수집 대상 밴드 삭제 요청: ${artist.name}`);
     try {
-      const res = await fetch(`/api/artists?id=${artist.id}`, {
-        method: 'DELETE',
-      });
-
+      const res = await fetch(`/api/artists?id=${artist.id}`, { method: 'DELETE' });
       const text = await res.text();
       const data = text ? JSON.parse(text) : {};
 
       if (res.ok && data.success) {
-        console.log(`[관리자] '${artist.name}' 삭제 완료`);
         setLastMessage(`'${artist.name}' 수집 대상에서 삭제 완료`);
         if (selectedArtist === artist.name) {
           setSelectedArtist('ALL');
@@ -250,7 +335,6 @@ export default function HarvestAdminPage() {
         alert(`밴드 삭제 실패: ${data.message || data.error || `HTTP ${res.status}`}`);
       }
     } catch (err: any) {
-      console.error('[관리자] 밴드 삭제 통신 에러:', err.message);
       alert(`삭제 오류: ${err.message}`);
     }
   }
@@ -258,7 +342,6 @@ export default function HarvestAdminPage() {
   async function handleTriggerNow() {
     setTriggering(true);
     setLastMessage('다음 아티스트 곡 수집 및 실측 오디오 분석 중...');
-    console.log('[관리자] 즉시 수집 트리거 가동');
 
     try {
       const res = await fetch('/api/songs/sync');
@@ -273,20 +356,14 @@ export default function HarvestAdminPage() {
       if (res.ok && data.success) {
         const artist = data.lastExecution?.artist || '아티스트';
         const count = data.lastExecution?.count || 0;
-        const msg = `${artist} ${count}곡 수집/분석 갱신 완료`;
-        console.log(`[관리자] [완료] ${msg}`);
-        setLastMessage(msg);
+        setLastMessage(`${artist} ${count}곡 수집/분석 갱신 완료`);
         await fetchArtists();
         await fetchSongs();
       } else {
-        const errorMsg = `수집 실패: ${data.error || data.message || `HTTP ${res.status}`}`;
-        console.error(`[관리자] ${errorMsg}`);
-        setLastMessage(errorMsg);
+        setLastMessage(`수집 실패: ${data.error || data.message || `HTTP ${res.status}`}`);
       }
     } catch (err: any) {
-      const errTxt = `수집 오류: ${err.message}`;
-      console.error(`[관리자] ${errTxt}`);
-      setLastMessage(errTxt);
+      setLastMessage(`수집 오류: ${err.message}`);
     } finally {
       setTriggering(false);
     }
@@ -296,7 +373,6 @@ export default function HarvestAdminPage() {
     if (!confirm('기존 곡들의 오디오(BPM & Key) 실측 백필을 진행하시겠습니까? (최대 10곡씩 순차 처리)')) return;
     setIsBackfilling(true);
     setLastMessage('기존 수집곡 오디오 분석 백필 가동 중...');
-    console.log('[관리자] 오디오 분석 백필 요청');
 
     try {
       const res = await fetch('/api/songs/backfill-audio', { method: 'POST' });
@@ -309,19 +385,13 @@ export default function HarvestAdminPage() {
       }
 
       if (res.ok && data.success) {
-        const msg = `${data.updatedCount || 0}곡 분석 갱신됨 (남은 대상: ${data.remainingCount || 0}곡)`;
-        console.log(`[관리자] [백필 완료] ${msg}`);
-        setLastMessage(msg);
+        setLastMessage(`${data.updatedCount || 0}곡 분석 갱신됨 (남은 대상: ${data.remainingCount || 0}곡)`);
         await fetchSongs();
       } else {
-        const errorMsg = `백필 실패: ${data.error || data.message || `HTTP ${res.status}`}`;
-        console.error(`[관리자] ${errorMsg}`);
-        setLastMessage(errorMsg);
+        setLastMessage(`백필 실패: ${data.error || data.message || `HTTP ${res.status}`}`);
       }
     } catch (err: any) {
-      const errTxt = `백필 오류: ${err.message}`;
-      console.error(`[관리자] ${errTxt}`);
-      setLastMessage(errTxt);
+      setLastMessage(`백필 오류: ${err.message}`);
     } finally {
       setIsBackfilling(false);
     }
@@ -372,6 +442,8 @@ export default function HarvestAdminPage() {
     return matchesArtist && matchesSearch;
   });
 
+  const isAllSelected = filteredSongs.length > 0 && selectedSongIds.size === filteredSongs.length;
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 lg:p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -392,12 +464,22 @@ export default function HarvestAdminPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              type="button"
+              disabled={isCleaning}
+              onClick={handleCleanupNonBand}
+              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-rose-800/80 px-3 py-2 rounded-xl text-xs text-rose-300 font-semibold shadow transition disabled:opacity-50"
+            >
+              <ShieldAlert className={`w-3.5 h-3.5 ${isCleaning ? 'animate-spin' : ''}`} />
+              비밴드 음원 정리
+            </button>
+
             <button
               type="button"
               disabled={isBackfilling}
               onClick={handleBackfillAudio}
-              className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 border border-purple-800/80 px-3.5 py-2 rounded-xl text-xs text-purple-300 font-semibold shadow transition disabled:opacity-50"
+              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-purple-800/80 px-3.5 py-2 rounded-xl text-xs text-purple-300 font-semibold shadow transition disabled:opacity-50"
             >
               <Sparkles className={`w-3.5 h-3.5 ${isBackfilling ? 'animate-spin' : ''}`} />
               기존곡 오디오 백필
@@ -407,7 +489,7 @@ export default function HarvestAdminPage() {
               type="button"
               disabled={triggering}
               onClick={handleTriggerNow}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 rounded-xl text-xs font-bold text-white shadow transition"
+              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 rounded-xl text-xs font-bold text-white shadow transition"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${triggering ? 'animate-spin' : ''}`} />
               다음 밴드 즉시 수집
@@ -422,7 +504,7 @@ export default function HarvestAdminPage() {
           </div>
         )}
 
-        {/* 💡 즉시 산출된 핵심 지표 카드 */}
+        {/* 핵심 통계 지표 카드 */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
             <span className="text-xs text-slate-400 block mb-1">총 수집 곡수</span>
@@ -438,16 +520,12 @@ export default function HarvestAdminPage() {
 
           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
             <span className="text-xs text-slate-400 block mb-1">BPM 실측 완료율</span>
-            <span className="text-2xl font-black text-emerald-400">
-              {stats.bpmRate}%
-            </span>
+            <span className="text-2xl font-black text-emerald-400">{stats.bpmRate}%</span>
           </div>
 
           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
             <span className="text-xs text-slate-400 block mb-1">조성(Key) 산출 완료율</span>
-            <span className="text-2xl font-black text-purple-400">
-              {stats.keyRate}%
-            </span>
+            <span className="text-2xl font-black text-purple-400">{stats.keyRate}%</span>
           </div>
 
           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl col-span-2 sm:col-span-1">
@@ -469,7 +547,7 @@ export default function HarvestAdminPage() {
           </div>
         </div>
 
-        {/* 2열 메인 레이아웃: 아티스트 목록 및 전체 수집 곡 스크롤뷰 */}
+        {/* 2열 메인 레이아웃 */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           
           {/* 좌측: 수집 대상 아티스트 큐 */}
@@ -542,24 +620,51 @@ export default function HarvestAdminPage() {
             </div>
           </div>
 
-          {/* 우측: 수집 곡 전수 조회 및 실측 오디오 분석 스크롤뷰 */}
+          {/* 우측: 수집 음원 전수 조회 및 선택 삭제 패널 */}
           <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-              <h2 className="text-sm font-bold flex items-center gap-1.5 text-slate-200">
-                <Music2 className="w-4 h-4 text-purple-400" />
-                수집 음원 전수 조회 ({filteredSongs.length}곡)
-                {selectedArtist !== 'ALL' && <span className="text-indigo-400 text-xs">({selectedArtist})</span>}
-              </h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-sm font-bold flex items-center gap-1.5 text-slate-200">
+                  <Music2 className="w-4 h-4 text-purple-400" />
+                  수집 음원 ({filteredSongs.length}곡)
+                  {selectedArtist !== 'ALL' && <span className="text-indigo-400 text-xs">({selectedArtist})</span>}
+                </h2>
 
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchSongQuery}
-                  onChange={(e) => setSearchSongQuery(e.target.value)}
-                  placeholder="곡명 또는 밴드 검색..."
-                  className="bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full sm:w-48"
-                />
+                {selectedSongIds.size > 0 && (
+                  <button
+                    type="button"
+                    disabled={isDeletingSelected}
+                    onClick={handleDeleteSelectedSongs}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition shadow disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    {selectedSongIds.size}개 선택 삭제
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {filteredSongs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => toggleSelectAll(filteredSongs)}
+                    className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-indigo-300 px-2 py-1 bg-slate-950 border border-slate-800 rounded-lg transition"
+                  >
+                    {isAllSelected ? <CheckSquare className="w-3.5 h-3.5 text-indigo-400" /> : <Square className="w-3.5 h-3.5" />}
+                    전체선택
+                  </button>
+                )}
+
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchSongQuery}
+                    onChange={(e) => setSearchSongQuery(e.target.value)}
+                    placeholder="곡명 또는 밴드 검색..."
+                    className="bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full sm:w-48"
+                  />
+                </div>
               </div>
             </div>
 
@@ -569,55 +674,89 @@ export default function HarvestAdminPage() {
               <div className="p-12 text-center text-slate-500 text-xs">조건에 맞는 음원이 없습니다.</div>
             ) : (
               <div className="space-y-2 max-h-[580px] overflow-y-auto pr-1">
-                {filteredSongs.map((song) => (
-                  <div
-                    key={song.id}
-                    className="p-3 bg-slate-950/60 border border-slate-800/80 hover:border-slate-700 rounded-xl flex items-center justify-between gap-3 text-xs"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-slate-200 truncate">{song.title}</span>
-                        <span className="text-slate-400">({song.artist})</span>
-                      </div>
+                {filteredSongs.map((song) => {
+                  const isChecked = selectedSongIds.has(song.id);
 
-                      <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">
-                        <span>{song.genre || '장르 미지정'}</span>
-                        <span>•</span>
-                        <span>{new Date(song.created_at).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                        song.bpm 
-                          ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800' 
-                          : 'bg-slate-900 text-slate-500 border-slate-800'
-                      }`}>
-                        {song.bpm ? `${song.bpm} BPM` : 'BPM 분석 대기'}
-                      </span>
-
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                        song.original_key 
-                          ? 'bg-purple-950/80 text-purple-300 border-purple-800' 
-                          : 'bg-slate-900 text-slate-500 border-slate-800'
-                      }`}>
-                        {song.original_key ? `${song.original_key} Key` : 'Key 미산출'}
-                      </span>
-
-                      {song.youtube_url && (
-                        <a
-                          href={song.youtube_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-1.5 text-slate-400 hover:text-rose-400 bg-slate-900 border border-slate-800 rounded-lg transition"
-                          title="YouTube 음원"
+                  return (
+                    <div
+                      key={song.id}
+                      onClick={() => toggleSongSelection(song.id)}
+                      className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs cursor-pointer transition ${
+                        isChecked 
+                          ? 'bg-indigo-950/40 border-indigo-600/80' 
+                          : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div 
+                          className="shrink-0 text-slate-400" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSongSelection(song.id);
+                          }}
                         >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
-                      )}
+                          {isChecked ? (
+                            <CheckSquare className="w-4 h-4 text-indigo-400" />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-600 hover:text-slate-400" />
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-slate-200 truncate">{song.title}</span>
+                            <span className="text-slate-400">({song.artist})</span>
+                          </div>
+
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">
+                            <span>{song.genre || '장르 미지정'}</span>
+                            <span>•</span>
+                            <span>{new Date(song.created_at).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                          song.bpm 
+                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800' 
+                            : 'bg-slate-900 text-slate-500 border-slate-800'
+                        }`}>
+                          {song.bpm ? `${song.bpm} BPM` : 'BPM 대기'}
+                        </span>
+
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                          song.original_key 
+                            ? 'bg-purple-950/80 text-purple-300 border-purple-800' 
+                            : 'bg-slate-900 text-slate-500 border-slate-800'
+                        }`}>
+                          {song.original_key ? `${song.original_key} Key` : 'Key 미산출'}
+                        </span>
+
+                        {song.youtube_url && (
+                          <a
+                            href={song.youtube_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 text-slate-400 hover:text-rose-400 bg-slate-900 border border-slate-800 rounded-lg transition"
+                            title="YouTube 음원"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteSong(e, song)}
+                          title={`'${song.title}' 곡 삭제`}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/50 border border-transparent hover:border-rose-900/60 transition"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -625,7 +764,6 @@ export default function HarvestAdminPage() {
 
       </div>
 
-      {/* 수집 대상 밴드 신규 등록 모달 */}
       {isAddArtistOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">

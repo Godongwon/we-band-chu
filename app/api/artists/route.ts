@@ -1,10 +1,8 @@
-// app/api/artists/route.ts
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
 export const maxDuration = 30;
 
-// LLM을 통해 밴드의 영문 별칭, 보컬 성별, 건반 세션 유무 분석
 async function inspectBandProfileWithLLM(bandName: string) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -17,18 +15,12 @@ async function inspectBandProfileWithLLM(bandName: string) {
 
   const prompt = `
 당신은 대한민국 및 글로벌 밴드/인디 음악 전문가입니다.
-밴드/아티스트 이름 "${bandName}"에 대해 아래 정보를 정확하게 분석하여 순수 JSON 포맷으로만 응답해 주세요.
+밴드/아티스트 이름 "${bandName}"에 대해 아래 정보를 분석하여 순수 JSON 포맷으로만 응답해 주세요.
 
 1. search_alias: Apple iTunes 또는 음원 사이트에서 검색이 가장 잘 되는 공식 영문명 (예: 잔나비 -> JANNABI, 자우림 -> Jaurim, 실리카겔 -> Silica Gel, 없으면 한글명 그대로)
 2. vocal_gender: 메인 보컬의 성별 (FEMALE, MALE, MIXED 중 택1)
-   - 예: 윤하, QWER, 체리필터, 터치드, 자우림, 새소년 -> FEMALE
-   - 예: 데이식스, 쏜애플, 실리카겔, YB, 검정치마 -> MALE
-   - 예: 악뮤(AKMU) -> MIXED
-3. has_keys: 해당 밴드의 공식 세션 라인업에 건반(키보드/피아노/신디사이저) 멤버가 고정으로 있는지 여부 (true 또는 false)
-   - 예: 데이식스(김원필), 페퍼톤스(신재평 건반/신스 라인), 잔나비 등 건반 중심 밴드 -> true
-   - 예: 쏜애플, 실리카겔, 너드커넥션 등 순수 기타 중심 밴드 -> false
+3. has_keys: 해당 밴드의 공식 라인업에 건반(키보드/피아노/신디사이저) 멤버가 고정으로 있는지 여부 (true 또는 false)
 
-[응답 JSON 규격 - 백틱이나 마크다운 없이 순수 JSON만 반환]
 {
   "search_alias": "영문명",
   "vocal_gender": "FEMALE" | "MALE" | "MIXED",
@@ -69,23 +61,14 @@ async function inspectBandProfileWithLLM(bandName: string) {
 
 export async function GET() {
   try {
-    // 💡 조건을 단순화하여 모든 등록 밴드를 안전하게 로드
     const { data: artists, error } = await supabase
       .from('target_artists')
       .select('*')
       .order('id', { ascending: true });
 
-    if (error) {
-      console.error('[관리자] target_artists 조회 에러:', error.message);
-      throw error;
-    }
-
-    return NextResponse.json({ 
-      success: true, 
-      artists: artists || [] 
-    });
+    if (error) throw error;
+    return NextResponse.json({ success: true, artists: artists || [] });
   } catch (error: any) {
-    console.error('[관리자] target_artists GET 실패:', error.message);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
@@ -100,11 +83,7 @@ export async function POST(req: Request) {
     }
 
     const cleanName = name.trim();
-    console.log(`[관리자] '${cleanName}' LLM 프로필 자동 조사 시작...`);
-
-    // 💡 LLM이 search_alias, vocal_gender, has_keys 자동 판별
     const analyzed = await inspectBandProfileWithLLM(cleanName);
-    console.log(`[관리자] '${cleanName}' LLM 분석 결과:`, analyzed);
 
     const { data, error } = await supabase
       .from('target_artists')

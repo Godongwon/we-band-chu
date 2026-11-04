@@ -3,13 +3,10 @@ import { supabase } from '@/lib/supabaseClient';
 // @ts-ignore
 import MusicTempo from 'music-tempo';
 // @ts-ignore
-import decode from 'audio-decode'; // 사운드 드라이버 불필요한 순수 JS 디코더
+import decode from 'audio-decode';
 
-export const maxDuration = 60; // Vercel 서버리스 실행 제한 시간 60초 연장
+export const maxDuration = 60;
 
-// ========================================================
-// 1. 수집 설정 및 전역 쿼터 모니터링 (싱글톤)
-// ========================================================
 export const HARVEST_INTERVAL_MS = 5 * 60 * 1000;
 
 declare global {
@@ -46,7 +43,7 @@ export function setQuotaExceeded(exceeded: boolean) {
 export function getQuotaStatus() {
   checkAndResetDailyQuota();
   const currentUnits = globalThis.__youtubeQuotaUnits || 0;
-  const isExceeded = !!globalThis.__youtubeQuotaExceeded;
+  const isExceeded = !globalThis.__youtubeQuotaExceeded;
 
   return {
     estimatedUnits: currentUnits,
@@ -58,17 +55,7 @@ export function getQuotaStatus() {
 
 let isHarvestingRunning = false;
 
-// ========================================================
-// 2. iTunes Search API (음원 탐색 + previewUrl 획득)
-// ========================================================
-interface ITunesTrack {
-  trackName: string;
-  artistName: string;
-  primaryGenreName?: string;
-  previewUrl?: string;
-}
-
-// 💡 1. 밴드 합주에 부적합한 iTunes 기본 장르 배제 목록
+// 1. 비밴드 장르 및 키워드 배제 목록
 const EXCLUDED_GENRES = [
   'Dance',
   'Electronic',
@@ -80,7 +67,6 @@ const EXCLUDED_GENRES = [
   'Soundtrack'
 ];
 
-// 💡 2. 리믹스, EDM, 외주 참여곡 등 비밴드 트랙 키워드 배제 목록
 const EXCLUDED_TITLE_KEYWORDS = [
   'remix',
   '리믹스',
@@ -90,8 +76,6 @@ const EXCLUDED_TITLE_KEYWORDS = [
   'soundtrack',
   'ost part',
   'ost ver',
-  '드라마 ost',
-  '게임 ost',
   'orchestra',
   'piano ver',
   'acoustic ver',
@@ -99,6 +83,13 @@ const EXCLUDED_TITLE_KEYWORDS = [
   'instrumental',
   'karaoke'
 ];
+
+interface ITunesTrack {
+  trackName: string;
+  artistName: string;
+  primaryGenreName?: string;
+  previewUrl?: string;
+}
 
 async function fetchTracksFromITunes(
   artist: string,
@@ -129,23 +120,19 @@ async function fetchTracksFromITunes(
       for (const item of data.results as ITunesTrack[]) {
         if (!item.trackName) continue;
 
-        // 💡 1. 비밴드 장르 1차 필터링
+        // 비밴드 장르 배제
         const itemGenre = item.primaryGenreName || '';
-        const isExcludedGenre = EXCLUDED_GENRES.some((eg) =>
-          itemGenre.toLowerCase().includes(eg.toLowerCase())
-        );
-        if (isExcludedGenre) continue;
+        if (EXCLUDED_GENRES.some((eg) => itemGenre.toLowerCase().includes(eg.toLowerCase()))) {
+          continue;
+        }
 
-        // 💡 2. 제목 기반 리믹스 / 외주 OST / 일렉트로닉 트랙 배제
+        // 비밴드 키워드 배제
         const lowerRawTitle = item.trackName.toLowerCase();
-        const isExcludedTitle = EXCLUDED_TITLE_KEYWORDS.some((kw) =>
-          lowerRawTitle.includes(kw)
-        );
-        if (isExcludedTitle) continue;
+        if (EXCLUDED_TITLE_KEYWORDS.some((kw) => lowerRawTitle.includes(kw))) {
+          continue;
+        }
 
-        // 💡 3. 아티스트 일치 여부 확인 (타 아티스트 피처링 단독 음원 오수집 방지)
         const itemArtistClean = (item.artistName || '').toLowerCase().replace(/\s+/g, '');
-
         const isMatched =
           itemArtistClean.includes(targetArtistClean) ||
           targetArtistClean.includes(itemArtistClean) ||
@@ -153,7 +140,6 @@ async function fetchTracksFromITunes(
 
         if (!isMatched) continue;
 
-        // 불필요한 태그 제거 및 곡명 정제
         let cleanTitle = item.trackName
           .replace(/\(.*?(Inst|MR|Remaster|Live|Ver\.|Version|Track|Instrumental).*?\)/gi, '')
           .replace(/\[.*?(Inst|MR|Remaster|Live|Ver\.|Version|Track|Instrumental).*?\]/gi, '')
@@ -171,23 +157,16 @@ async function fetchTracksFromITunes(
       }
 
       if (candidates.length > 0) {
-        console.log(
-          `[관리자][iTunes Search Success] "${artist}" (검색어: "${term}") 정식 밴드 음원 ${candidates.length}곡 탐색 완료`
-        );
         return candidates;
       }
     } catch (err: any) {
-      console.warn(`[관리자][iTunes Search Try Fail] ${term}:`, err.message);
+      console.warn(`[관리자][iTunes Search Fail] ${term}:`, err.message);
     }
   }
 
-  console.log(`[관리자][iTunes Search] 밴드 규격 음원을 찾지 못함: "${artist}"`);
   return [];
 }
 
-// ========================================================
-// 3. 오디오 파형 기반 실측 BPM 및 Key(조성) 동시 검출
-// ========================================================
 const PITCH_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
@@ -258,33 +237,10 @@ async function analyzeAudioFeatures(previewUrl?: string): Promise<{ bpm: number 
     const validKey = detectKeyFromChannel(channelData, audioBuffer.sampleRate);
 
     return { bpm: validBpm, original_key: validKey };
-  } catch (err: any) {
-    console.warn('[관리자][Audio Analysis Skipped]:', err.message);
+  } catch {
     return { bpm: null, original_key: null };
   }
 }
-
-// ========================================================
-// 4. YouTube API 검색 및 공식 음원 검증
-// ========================================================
-const BLACKLIST_KEYWORDS = [
-  '모음',
-  '플레이리스트',
-  'playlist',
-  'full album',
-  '풀앨범',
-  '전곡',
-  '티저',
-  'teaser',
-  '직캠',
-  'fancam',
-  'reaction',
-  '리액션',
-  'mr제거',
-  'inst',
-  'karaoke',
-  '노래방',
-];
 
 async function verifyAndFetchOfficialAudio(
   artist: string,
@@ -307,7 +263,6 @@ async function verifyAndFetchOfficialAudio(
         data.error.code === 403 ||
         data.error.errors?.some((e: any) => e.reason === 'quotaExceeded')
       ) {
-        console.error('[관리자][YouTube API Error] 일일 쿼터 소진 감지!');
         setQuotaExceeded(true);
       }
       return null;
@@ -320,7 +275,7 @@ async function verifyAndFetchOfficialAudio(
       const videoTitle = item.snippet.title;
       const channelTitle = item.snippet.channelTitle;
 
-      const hasBlacklist = BLACKLIST_KEYWORDS.some((kw) =>
+      const hasBlacklist = EXCLUDED_TITLE_KEYWORDS.some((kw) =>
         videoTitle.toLowerCase().includes(kw)
       );
       if (hasBlacklist) return null;
@@ -345,9 +300,41 @@ async function verifyAndFetchOfficialAudio(
   return null;
 }
 
-// ========================================================
-// 5. 단일 밴드 배치 수집 실행기 (has_keys, vocal_gender 반영)
-// ========================================================
+// 수집 주기마다 실행되는 비밴드 음원 자동 정제
+async function runAutoGenrePurge(): Promise<number> {
+  try {
+    const { data: songs, error } = await supabase
+      .from('songs')
+      .select('id, title, genre');
+
+    if (error || !songs) return 0;
+
+    const idsToDelete = songs
+      .filter((s) => {
+        const g = (s.genre || '').toLowerCase();
+        const t = (s.title || '').toLowerCase();
+        return (
+          EXCLUDED_GENRES.some((bg) => g.includes(bg.toLowerCase())) ||
+          EXCLUDED_TITLE_KEYWORDS.some((kw) => t.includes(kw))
+        );
+      })
+      .map((s) => s.id);
+
+    if (idsToDelete.length > 0) {
+      const chunkSize = 50;
+      for (let i = 0; i < idsToDelete.length; i += chunkSize) {
+        await supabase.from('songs').delete().in('id', idsToDelete.slice(i, i + chunkSize));
+      }
+      console.log(`[관리자][AutoPurge] 비밴드 음원 ${idsToDelete.length}곡 자동 정제 완료`);
+    }
+
+    return idsToDelete.length;
+  } catch (err: any) {
+    console.warn('[관리자][AutoPurge Error]:', err.message);
+    return 0;
+  }
+}
+
 interface TargetArtistRow {
   id: string;
   name: string;
@@ -366,7 +353,6 @@ export async function runArtistHarvestBatch(): Promise<{
     return { success: false, artist: '대기 중 (이미 작업 중)', count: 0 };
   }
 
-  // 💡 has_keys, vocal_gender 필드를 명시적으로 조회하여 TS 에러를 방지합니다.
   const { data: activeArtists, error: artistError } = await supabase
     .from('target_artists')
     .select('id, name, search_alias, last_harvested_at, has_keys, vocal_gender')
@@ -375,7 +361,6 @@ export async function runArtistHarvestBatch(): Promise<{
     .limit(1);
 
   if (artistError || !activeArtists || activeArtists.length === 0) {
-    console.log('[관리자][AutoHarvest] 활성화된 수집 대상 아티스트가 없습니다.');
     return { success: false, artist: '활성 아티스트 없음', count: 0 };
   }
 
@@ -385,8 +370,6 @@ export async function runArtistHarvestBatch(): Promise<{
   const ytApiKey = process.env.YOUTUBE_API_KEY || '';
 
   isHarvestingRunning = true;
-  console.log(`[관리자][AutoHarvest] >>> [BPM + Key 실측 수집 시작] "${targetArtist}" (별칭: ${searchAlias || '없음'}, 건반: ${currentTarget.has_keys ? 'O' : 'X'})`);
-
   let savedCount = 0;
 
   try {
@@ -405,26 +388,20 @@ export async function runArtistHarvestBatch(): Promise<{
       (t) => !existingTitleSet.has(t.title.toLowerCase().trim())
     );
 
-    console.log(
-      `[관리자][AutoHarvest] "${targetArtist}" 전곡 ${itunesTracks.length}곡 중 신규 미등록 ${newTracksToProcess.length}곡 발견`
-    );
-
     if (newTracksToProcess.length === 0) {
-      console.log(`[관리자][AutoHarvest] "${targetArtist}"의 모든 곡이 이미 DB에 등록되어 있습니다.`);
       await supabase
         .from('target_artists')
         .update({ last_harvested_at: new Date().toISOString() })
         .eq('id', currentTarget.id);
 
+      await runAutoGenrePurge();
       return { success: true, artist: targetArtist, count: 0 };
     }
 
-    // 💡 밴드에 건반이 없으면 기타로 완벽 커버 가능한 곡(keys_coverable = true)으로 매핑
     const isKeysCoverable = !currentTarget.has_keys;
 
     for (const track of newTracksToProcess) {
       const cleanTitle = track.title.trim();
-
       const { bpm, original_key } = await analyzeAudioFeatures(track.previewUrl);
 
       let officialAudioUrl: string | null = null;
@@ -456,12 +433,6 @@ export async function runArtistHarvestBatch(): Promise<{
       if (!songError) {
         savedCount++;
         existingTitleSet.add(cleanTitle.toLowerCase());
-        const bpmDisplay = bpm ? `${bpm}` : '측정 불가';
-        console.log(
-          `[관리자][AutoHarvest DB 적재] (${savedCount}/${newTracksToProcess.length}) ${targetArtist} - ${cleanTitle} [BPM: ${bpmDisplay}, Key: ${original_key}] (음원URL: ${officialAudioUrl ? 'O' : 'X'})`
-        );
-      } else {
-        console.error(`[관리자][AutoHarvest DB Error]:`, songError.message);
       }
     }
 
@@ -469,6 +440,9 @@ export async function runArtistHarvestBatch(): Promise<{
       .from('target_artists')
       .update({ last_harvested_at: new Date().toISOString() })
       .eq('id', currentTarget.id);
+
+    // 수집 완료 후 비밴드 곡 자동 정제
+    await runAutoGenrePurge();
 
     return { success: true, artist: targetArtist, count: savedCount };
   } catch (err: any) {
@@ -479,14 +453,7 @@ export async function runArtistHarvestBatch(): Promise<{
   }
 }
 
-// ========================================================
-// 6. 백그라운드 스케줄러 초기화
-// ========================================================
 if (!globalThis.__artistHarvestInterval) {
-  console.log(
-    `[관리자][AutoHarvest] 워커 가동됨. (주기: ${HARVEST_INTERVAL_MS / 1000}초)`
-  );
-
   setTimeout(() => {
     runArtistHarvestBatch();
   }, 3000);
@@ -496,9 +463,6 @@ if (!globalThis.__artistHarvestInterval) {
   }, HARVEST_INTERVAL_MS);
 }
 
-// ========================================================
-// 7. API Route 핸들러 (관리자 대시보드 호환 응답 규격)
-// ========================================================
 export async function GET(req: Request) {
   const result = await runArtistHarvestBatch();
 

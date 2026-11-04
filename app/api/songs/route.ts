@@ -1,76 +1,83 @@
-// app/api/songs/route.ts
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const artist = searchParams.get('artist');
-  const missingOnly = searchParams.get('missingOnly') === 'true';
+  try {
+    const { searchParams } = new URL(req.url);
+    const limit = parseInt(searchParams.get('limit') || '2000', 10);
+    const id = searchParams.get('id');
 
-  let query = supabase
-    .from('songs')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .range(0, 4999); // 💡 최대 5,000곡까지 잘림 없이 한 번에 조회
+    let query = supabase
+      .from('songs')
+      .select(`
+        *,
+        target_artists:artist_id (
+          name,
+          vocal_gender,
+          has_keys
+        )
+      `);
 
-  if (artist && artist !== 'ALL') {
-    query = query.eq('artist', artist);
-  }
+    if (id) {
+      const { data, error } = await query.eq('id', id).maybeSingle();
+      if (error) throw error;
+      return NextResponse.json({ song: data });
+    }
 
-  if (missingOnly) {
-    query = query.is('youtube_url', null);
-  }
+    const { data, error } = await query
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
-  const { data: songs, error } = await query;
-
-  if (error) {
+    if (error) throw error;
+    return NextResponse.json({ songs: data || [] });
+  } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-
-  return NextResponse.json({ songs: songs || [] });
 }
+
 export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     let id = searchParams.get('id');
+    let ids: string[] = [];
 
-    // 쿼리 파라미터(?id=...) 또는 JSON Body에서 id 추출
-    if (!id) {
-      try {
-        const body = await req.json();
+    try {
+      const body = await req.json();
+      if (body.ids && Array.isArray(body.ids)) {
+        ids = body.ids;
+      } else if (body.id) {
         id = body.id;
-      } catch {
-        // body가 비어있는 경우 무시
       }
+    } catch {
+      // Body가 없는 쿼리스트링 요청 대응
     }
 
-    if (!id) {
+    if (id) {
+      ids.push(id);
+    }
+
+    if (ids.length === 0) {
       return NextResponse.json(
-        { success: false, message: '삭제할 곡의 ID가 누락되었습니다.' },
+        { success: false, message: '삭제할 곡의 ID가 전달되지 않았습니다.' },
         { status: 400 }
       );
     }
 
-    // Supabase DB에서 해당 곡 삭제
-    const { error } = await supabase
-      .from('songs')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      return NextResponse.json(
-        { success: false, message: `DB 삭제 실패: ${error.message}` },
-        { status: 500 }
-      );
+    const chunkSize = 50;
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const { error } = await supabase.from('songs').delete().in('id', chunk);
+      if (error) throw error;
     }
 
     return NextResponse.json({
       success: true,
-      message: '곡이 성공적으로 삭제되었습니다.',
+      message: `총 ${ids.length}곡이 성공적으로 삭제되었습니다.`,
+      deletedCount: ids.length,
     });
   } catch (err: any) {
     return NextResponse.json(
-      { success: false, message: err.message || '서버 삭제 처리 중 오류 발생' },
+      { success: false, message: err.message || '삭제 처리 중 오류 발생' },
       { status: 500 }
     );
   }
