@@ -4,6 +4,9 @@ import { supabase } from '@/lib/supabaseClient';
 import MusicTempo from 'music-tempo';
 import { AudioContext } from 'node-web-audio-api';
 
+// 💡 Vercel 타임아웃 방지 설정 (직접 추가해 주는 코드입니다)
+export const maxDuration = 60; // Vercel 서버리스 실행 제한 시간을 60초로 연장
+
 // ========================================================
 // 1. 수집 설정 및 전역 쿼터 모니터링 (싱글톤)
 // ========================================================
