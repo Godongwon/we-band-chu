@@ -25,9 +25,6 @@ import {
   AlertCircle
 } from 'lucide-react';
 
-// ==========================================
-// 1. 공통 타입 및 상수 정의
-// ==========================================
 type StatusType = 'WISHLIST' | 'PRACTICING' | 'COMPLETED' | 'PERFORMED';
 type VocalGender = 'MALE' | 'FEMALE' | 'MIXED' | 'ANY';
 type RecommendationCategory = 'ALL' | 'SIMILAR' | 'HIGH_TENSION' | 'PLAYING_FEEL' | 'EMOTIONAL';
@@ -148,7 +145,7 @@ function PracticeModal({
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-950 text-blue-300 border border-blue-800">
-                [클라] 합주 연습 준비
+                합주 연습 준비
               </span>
               <h3 className="font-bold text-lg text-slate-100">{song.title}</h3>
               <span className="text-xs text-slate-400">({song.artist})</span>
@@ -261,7 +258,7 @@ function ConfigModal({
         <div className="flex justify-between items-center border-b border-slate-800 pb-3">
           <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
             <Sliders className="w-5 h-5 text-indigo-400" />
-            [클라] 밴드 파트 구성 수정
+            밴드 파트 구성 수정
           </h3>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-200">
             <X className="w-5 h-5" />
@@ -420,11 +417,11 @@ export default function Home() {
     setLoading(true);
     console.log(`[클라] '${band.name}' 레퍼토리 로딩 시작`);
 
-const { data: repData, error } = await supabase
-  .from('band_repertoire')
-  .select(`id, song_id, status, played_key, band_notes, votes_count, songs:song_id (*)`)
-  .eq('band_id', band.id)
-  .order('created_at', { ascending: false });
+    const { data: repData, error } = await supabase
+      .from('band_repertoire')
+      .select(`id, song_id, status, played_key, band_notes, votes_count, songs:song_id (*)`)
+      .eq('band_id', band.id)
+      .order('created_at', { ascending: false });
     
     if (error) {
       console.error('[클라] 레퍼토리 로드 실패:', error.message);
@@ -475,7 +472,7 @@ const { data: repData, error } = await supabase
       try {
         data = text ? JSON.parse(text) : {};
       } catch {
-        throw new Error('[클라] 추천 서버 응답 파싱 실패');
+        throw new Error('추천 서버 응답 파싱 실패');
       }
 
       if (data.recommendations) {
@@ -503,7 +500,7 @@ const { data: repData, error } = await supabase
 
   function handleReportSong(badSong: any) {
     const songTitle = badSong.title;
-    if (!confirm(` '${songTitle} (${badSong.artist})' 곡을 잘못된 데이터로 신고하고 목록에서 제외하시겠습니까?`)) {
+    if (!confirm(`'${songTitle} (${badSong.artist})' 곡을 잘못된 데이터로 신고하고 목록에서 제외하시겠습니까?`)) {
       return;
     }
     console.warn(`[클라] 곡 신고 및 제외 처리: ${songTitle}`);
@@ -655,17 +652,14 @@ const { data: repData, error } = await supabase
       setSearchQuery('');
     } catch (err: any) {
       console.error('[클라] 곡 등록 실패:', err.message);
-      alert('[클라] 등록 실패: ' + err.message);
+      alert('등록 실패: ' + err.message);
     } finally {
       setActionLoadingId(null);
     }
   }
 
- async function handleAddAiRecommendedSong(recSong: any) {
-    if (!currentBand) {
-      alert('[클라] 로그인된 밴드 정보가 없습니다.');
-      return;
-    }
+  async function handleAddAiRecommendedSong(recSong: any) {
+    if (!currentBand) return;
     setActionLoadingId(recSong.title);
     console.log(`[클라] AI 추천곡 담기 시작: ${recSong.title}`);
 
@@ -684,18 +678,14 @@ const { data: repData, error } = await supabase
       const finalArtist = matchedTrack?.artist || recSong.artist;
       const finalYoutubeUrl = matchedTrack?.youtubeUrl || '';
 
-      // 1. 기존 곡 존재 여부 확인
-      const { data: existingSong, error: findErr } = await supabase
+      let { data: existingSong } = await supabase
         .from('songs')
         .select('id')
         .ilike('title', finalTitle)
         .maybeSingle();
 
-      if (findErr) throw new Error(`곡 조회 실패: ${findErr.message}`);
-
       let targetSongId = existingSong?.id;
 
-      // 2. 신규 곡 등록
       if (!targetSongId) {
         const { data: newSong, error: insertErr } = await supabase
           .from('songs')
@@ -711,42 +701,34 @@ const { data: repData, error } = await supabase
           .select('id')
           .single();
 
-        if (insertErr) throw new Error(`신규 곡 등록 실패: ${insertErr.message}`);
+        if (insertErr) throw insertErr;
         targetSongId = newSong.id;
       }
 
-      // 3. 밴드 레퍼토리에 이미 등록되어 있는지 확인
-      const { data: existingRep, error: repFindErr } = await supabase
+      const { data: existingRep } = await supabase
         .from('band_repertoire')
         .select('id')
         .eq('band_id', currentBand.id)
         .eq('song_id', targetSongId)
         .maybeSingle();
 
-      if (repFindErr) throw new Error(`레퍼토리 중복 검사 실패: ${repFindErr.message}`);
-
-      if (existingRep) {
-        alert('[클라] 이미 우리 밴드 레퍼토리에 등록되어 있는 곡입니다.');
-        return;
+      if (!existingRep) {
+        const { error: repErr } = await supabase.from('band_repertoire').insert({
+          band_id: currentBand.id,
+          song_id: targetSongId,
+          status: 'WISHLIST',
+          played_key: recSong.recommended_key || recSong.original_key || 'C',
+          band_notes: 'AI 추천 레퍼토리 추가' + (finalYoutubeUrl ? ' (정식 음원 매칭)' : ''),
+          votes_count: 1,
+        });
+        if (repErr) throw repErr;
       }
-
-      // 4. 레퍼토리에 등록
-      const { error: repInsertErr } = await supabase.from('band_repertoire').insert({
-        band_id: currentBand.id,
-        song_id: targetSongId,
-        status: 'WISHLIST',
-        played_key: recSong.recommended_key || recSong.original_key || 'C',
-        band_notes: 'AI 추천 레퍼토리 추가' + (finalYoutubeUrl ? ' (정식 음원 매칭)' : ''),
-        votes_count: 1,
-      });
-
-      if (repInsertErr) throw new Error(`레퍼토리 등록 실패: ${repInsertErr.message}`);
 
       console.log(`[클라] AI 추천곡 담기 완료: ${finalTitle}`);
       await loadBandWorkspace(currentBand);
     } catch (err: any) {
-      console.error('[클라] 추천곡 등록 실패 상세:', err);
-      alert('[클라] 추천곡 등록 실패: ' + err.message);
+      console.error('[클라] 추천곡 등록 실패:', err.message);
+      alert('추천곡 등록 실패: ' + err.message);
     } finally {
       setActionLoadingId(null);
     }
@@ -772,7 +754,7 @@ const { data: repData, error } = await supabase
     setAuthError('');
     const cleanName = inputBandName.trim();
     if (!cleanName || !inputPassword.trim()) {
-      setAuthError('[클라] 밴드 이름과 비밀번호를 모두 입력해 주세요.');
+      setAuthError('밴드 이름과 비밀번호를 모두 입력해 주세요.');
       return;
     }
 
@@ -785,13 +767,13 @@ const { data: repData, error } = await supabase
 
     if (error || !bandData) {
       console.warn('[클라] 로그인 실패: 등록되지 않은 밴드');
-      setAuthError('[클라] 등록되지 않은 밴드 이름입니다.');
+      setAuthError('등록되지 않은 밴드 이름입니다.');
       return;
     }
 
     if (bandData.access_code && bandData.access_code !== inputPassword.trim()) {
       console.warn('[클라] 로그인 실패: 비밀번호 불일치');
-      setAuthError('[클라] 비밀번호가 일치하지 않습니다.');
+      setAuthError('비밀번호가 일치하지 않습니다.');
       return;
     }
 
@@ -806,7 +788,7 @@ const { data: repData, error } = await supabase
     setAuthError('');
     const cleanName = inputBandName.trim();
     if (!cleanName || !inputPassword.trim()) {
-      setAuthError('[클라] 밴드 이름과 비밀번호를 모두 입력해 주세요.');
+      setAuthError('밴드 이름과 비밀번호를 모두 입력해 주세요.');
       return;
     }
 
@@ -825,8 +807,8 @@ const { data: repData, error } = await supabase
 
     if (error) {
       console.error('[클라] 밴드 생성 오류:', error.message);
-      if (error.code === '23505') setAuthError('[클라] 이미 존재하는 밴드 이름입니다.');
-      else setAuthError('[클라] 밴드 생성 오류: ' + error.message);
+      if (error.code === '23505') setAuthError('이미 존재하는 밴드 이름입니다.');
+      else setAuthError('밴드 생성 오류: ' + error.message);
       return;
     }
 
@@ -839,7 +821,7 @@ const { data: repData, error } = await supabase
   if (initChecking) {
     return (
       <main className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 font-sans">
-        [클라] 밴드 접속 확인 중...
+        밴드 접속 확인 중...
       </main>
     );
   }
@@ -852,7 +834,7 @@ const { data: repData, error } = await supabase
             <h1 className="text-3xl font-black bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
               We.Band.Chu
             </h1>
-            <p className="text-slate-400 text-xs">[클라] 우리 밴드 합주곡 추천 & 워크스페이스</p>
+            <p className="text-slate-400 text-xs">우리 밴드 합주곡 추천 & 워크스페이스</p>
           </div>
 
           <form onSubmit={isRegisterMode ? handleRegisterBand : handleLogin} className="space-y-4">
@@ -1100,7 +1082,7 @@ const { data: repData, error } = await supabase
                         className="bg-rose-600 hover:bg-rose-500 text-white text-xs px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1 transition shadow"
                       >
                         <Plus className="w-3.5 h-3.5" />
-                        {actionLoadingId === ytSong.youtubeId ? '[클라] 등록 중...' : '담기'}
+                        {actionLoadingId === ytSong.youtubeId ? '등록 중...' : '담기'}
                       </button>
                     )}
                   </div>
@@ -1118,7 +1100,7 @@ const { data: repData, error } = await supabase
                 >
                   {loadingMore ? (
                     <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> [클라] 다음 곡 불러오는 중...
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> 다음 곡 불러오는 중...
                     </>
                   ) : (
                     <>
@@ -1134,10 +1116,10 @@ const { data: repData, error } = await supabase
                 {youtubeLoading ? (
                   <span className="flex items-center justify-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
-                    [클라] 정식 음원 검색 중...
+                    정식 음원 검색 중...
                   </span>
                 ) : (
-                  `[클라] '${searchQuery}'에 대한 검색 결과가 없습니다.`
+                  `'${searchQuery}'에 대한 검색 결과가 없습니다.`
                 )}
               </div>
             )}
@@ -1247,7 +1229,7 @@ const { data: repData, error } = await supabase
                       <button
                         type="button"
                         onClick={async () => {
-                          if (!confirm(' 레퍼토리에서 제거하시겠습니까?')) return;
+                          if (!confirm('레퍼토리에서 제거하시겠습니까?')) return;
                           console.log(`[클라] 레퍼토리 삭제: ${item.songs?.title}`);
                           setRepertoire((prev) => prev.filter((r) => r.id !== item.id));
                           await supabase.from('band_repertoire').delete().eq('id', item.id);
@@ -1265,7 +1247,7 @@ const { data: repData, error } = await supabase
           )}
         </section>
 
-        {/* 오른쪽: 선택형 스마트 추천 큐레이션 */}
+        {/* 오른쪽: 맞춤 합주 추천 10곡 */}
         <section className="w-full md:w-[360px] lg:w-[390px] shrink-0 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm sm:text-base font-bold flex items-center gap-1.5 text-slate-100">
@@ -1278,12 +1260,12 @@ const { data: repData, error } = await supabase
               onClick={handleRefreshRecommendations}
               className="flex items-center gap-1 text-[11px] text-purple-300 hover:text-purple-200 bg-purple-950/70 hover:bg-purple-900/80 border border-purple-800/80 px-2 py-1 rounded-lg transition shadow disabled:opacity-50"
             >
-              <RefreshCw className={`w-3 h-3 ${aiLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${aiLoading ? 'animate-spin' : ''}`} />
               새로고침
             </button>
           </div>
 
-          {/* 원클릭 분위기 필터 칩 */}
+          {/* 분위기 필터 칩 */}
           <div className="relative flex items-center group">
             <button
               type="button"
@@ -1330,11 +1312,11 @@ const { data: repData, error } = await supabase
             {aiLoading ? (
               <div className="bg-slate-900/60 border border-slate-800 p-6 rounded-2xl text-center text-slate-400 text-xs flex flex-col items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
-                [클라] 밴드 공연 및 커버 영상 검증 중...
+                밴드 공연 및 커버 영상 검증 중...
               </div>
             ) : aiRecommendations.length === 0 ? (
               <div className="bg-slate-900/40 border border-dashed border-slate-800 p-6 rounded-2xl text-center text-slate-500 text-xs">
-                [클라] 추천곡이 없습니다. 상단 새로고침을 눌러보세요.
+                추천곡이 없습니다. 상단 새로고침을 눌러보세요.
               </div>
             ) : (
               aiRecommendations.map((song, idx) => {
@@ -1433,7 +1415,7 @@ const { data: repData, error } = await supabase
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
                 <Sliders className="w-4 h-4 text-indigo-400" />
-                [클라] 레퍼토리 정보 수정
+                레퍼토리 정보 수정
               </h3>
               <button type="button" onClick={() => setEditingRepertoireItem(null)} className="text-slate-400 hover:text-slate-200">
                 <X className="w-5 h-5" />
@@ -1489,7 +1471,7 @@ const { data: repData, error } = await supabase
                 type="button"
                 onClick={async () => {
                   if (!editSongTitle.trim()) {
-                    alert('[클라] 곡 제목을 입력해 주세요.');
+                    alert('곡 제목을 입력해 주세요.');
                     return;
                   }
 

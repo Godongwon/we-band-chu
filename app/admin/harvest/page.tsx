@@ -69,7 +69,6 @@ export default function HarvestAdminPage() {
   const [searchSongQuery, setSearchSongQuery] = useState<string>('');
   const [isBackfilling, setIsBackfilling] = useState<boolean>(false);
 
-  // 💡 수집 대상 밴드 추가 모달 상태
   const [isAddArtistOpen, setIsAddArtistOpen] = useState<boolean>(false);
   const [newArtistName, setNewArtistName] = useState<string>('');
   const [newArtistAlias, setNewArtistAlias] = useState<string>('');
@@ -79,7 +78,7 @@ export default function HarvestAdminPage() {
   useEffect(() => {
     const savedAuth = sessionStorage.getItem('admin_authenticated');
     if (savedAuth === 'true') {
-      console.log('[관리자] 기존 관리자 세션 인증 확인됨');
+      console.log('[관리자] 기존 세션 인증 확인됨');
       setIsAuthenticated(true);
     }
   }, []);
@@ -103,7 +102,7 @@ export default function HarvestAdminPage() {
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault();
     setAuthError('');
-    console.log('[관리자] 관리자 패스워드 인증 요청 전송');
+    console.log('[관리자] 비밀번호 인증 요청');
 
     try {
       const res = await fetch('/api/admin/verify', {
@@ -116,16 +115,16 @@ export default function HarvestAdminPage() {
       const data = text ? JSON.parse(text) : {};
 
       if (res.ok && data.success) {
-        console.log('[관리자] 관리자 대시보드 입장 승인 완료');
+        console.log('[관리자] 인증 승인 완료');
         setIsAuthenticated(true);
         sessionStorage.setItem('admin_authenticated', 'true');
       } else {
         console.warn('[관리자] 인증 실패:', data.message || '인증 오류');
-        setAuthError(`[관리자] ${data.message || '인증에 실패했습니다.'}`);
+        setAuthError(data.message || '인증에 실패했습니다.');
       }
     } catch (err: any) {
       console.error('[관리자] 인증 통신 에러:', err.message);
-      setAuthError(`[관리자] 인증 통신 에러: ${err.message}`);
+      setAuthError(`통신 에러: ${err.message}`);
     }
   }
 
@@ -138,7 +137,7 @@ export default function HarvestAdminPage() {
         setStatus(data);
       }
     } catch (err: any) {
-      console.error('[관리자] 수집 상태 현황 로드 에러:', err.message);
+      console.error('[관리자] 수집 현황 로드 에러:', err.message);
     }
   }
 
@@ -157,13 +156,13 @@ export default function HarvestAdminPage() {
 
   async function fetchSongs() {
     setLoading(true);
-    console.log('[관리자] DB 전체 수집 곡 목록 조회 시작');
+    console.log('[관리자] 수집 음원 전체 목록 로드 시작');
     try {
       const res = await fetch('/api/songs?limit=2000');
       const text = await res.text();
       const data = text ? JSON.parse(text) : {};
       if (res.ok && data.songs) {
-        console.log(`[관리자] 총 ${data.songs.length}곡 목록 로드 완료`);
+        console.log(`[관리자] 총 ${data.songs.length}곡 로드 완료`);
         setSongs(data.songs);
       }
     } catch (err: any) {
@@ -176,12 +175,12 @@ export default function HarvestAdminPage() {
   async function handleAddTargetArtist(e: React.FormEvent) {
     e.preventDefault();
     if (!newArtistName.trim()) {
-      alert('[관리자] 밴드(아티스트) 이름을 입력해 주세요.');
+      alert('밴드(아티스트) 이름을 입력해 주세요.');
       return;
     }
 
     setAddingArtist(true);
-    console.log(`[관리자] 수집 대상 밴드 추가 시도: ${newArtistName}`);
+    console.log(`[관리자] 수집 대상 밴드 추가: ${newArtistName}`);
 
     try {
       const res = await fetch('/api/artists', {
@@ -198,7 +197,8 @@ export default function HarvestAdminPage() {
       const data = text ? JSON.parse(text) : {};
 
       if (res.ok && data.success) {
-        setLastMessage(`[관리자] [밴드 추가 완료] '${newArtistName}' 수집 큐 등록 완료`);
+        setLastMessage(`'${newArtistName}' 수집 큐 등록 완료`);
+        console.log(`[관리자] '${newArtistName}' 수집 큐 등록 성공`);
         setNewArtistName('');
         setNewArtistAlias('');
         setNewArtistPriority(1);
@@ -206,10 +206,12 @@ export default function HarvestAdminPage() {
         await fetchArtists();
         await fetchStatus();
       } else {
-        alert(`[관리자] 밴드 등록 실패: ${data.message || data.error || `HTTP ${res.status}`}`);
+        console.error('[관리자] 밴드 등록 실패:', data.message || data.error);
+        alert(`밴드 등록 실패: ${data.message || data.error || `HTTP ${res.status}`}`);
       }
     } catch (err: any) {
-      alert(`[관리자] 밴드 추가 통신 오류: ${err.message}`);
+      console.error('[관리자] 밴드 추가 통신 에러:', err.message);
+      alert(`통신 오류: ${err.message}`);
     } finally {
       setAddingArtist(false);
     }
@@ -217,8 +219,8 @@ export default function HarvestAdminPage() {
 
   async function handleTriggerNow() {
     setTriggering(true);
-    setLastMessage('[관리자] 다음 아티스트 곡 수집 및 실측 오디오 분석 중...');
-    console.log('[관리자] 다음 아티스트 즉시 수집 트리거 가동');
+    setLastMessage('다음 아티스트 곡 수집 및 실측 오디오 분석 중...');
+    console.log('[관리자] 즉시 수집 트리거 가동');
 
     try {
       const res = await fetch('/api/songs/sync');
@@ -227,26 +229,26 @@ export default function HarvestAdminPage() {
       try {
         data = text ? JSON.parse(text) : {};
       } catch {
-        throw new Error(`[관리자] 서버 응답 파싱 실패 (HTTP ${res.status})`);
+        throw new Error(`서버 응답 파싱 실패 (HTTP ${res.status})`);
       }
 
       if (res.ok && data.success) {
         const artist = data.lastExecution?.artist || '아티스트';
         const count = data.lastExecution?.count || 0;
-        const msg = `[관리자] [완료] ${artist} ${count}곡 수집/분석 갱신 완료`;
-        console.log(msg);
+        const msg = `${artist} ${count}곡 수집/분석 갱신 완료`;
+        console.log(`[관리자] [완료] ${msg}`);
         setLastMessage(msg);
         await fetchStatus();
         await fetchArtists();
         await fetchSongs();
       } else {
-        const errorMsg = `[관리자] 수집 실패: ${data.error || data.message || `HTTP ${res.status}`}`;
-        console.error(errorMsg);
+        const errorMsg = `수집 실패: ${data.error || data.message || `HTTP ${res.status}`}`;
+        console.error(`[관리자] ${errorMsg}`);
         setLastMessage(errorMsg);
       }
     } catch (err: any) {
-      const errTxt = `[관리자] 수집 오류: ${err.message}`;
-      console.error(errTxt);
+      const errTxt = `수집 오류: ${err.message}`;
+      console.error(`[관리자] ${errTxt}`);
       setLastMessage(errTxt);
     } finally {
       setTriggering(false);
@@ -254,10 +256,10 @@ export default function HarvestAdminPage() {
   }
 
   async function handleBackfillAudio() {
-    if (!confirm('[관리자] 기존 곡들의 오디오(BPM & Key) 실측 백필을 진행하시겠습니까? (최대 10곡씩 순차 처리)')) return;
+    if (!confirm('기존 곡들의 오디오(BPM & Key) 실측 백필을 진행하시겠습니까? (최대 10곡씩 순차 처리)')) return;
     setIsBackfilling(true);
-    setLastMessage('[관리자] 기존 수집곡 오디오 분석 백필 가동 중...');
-    console.log('[관리자] 기존 수집곡 오디오 분석 백필 요청');
+    setLastMessage('기존 수집곡 오디오 분석 백필 가동 중...');
+    console.log('[관리자] 오디오 분석 백필 요청');
 
     try {
       const res = await fetch('/api/songs/backfill-audio', { method: 'POST' });
@@ -266,23 +268,23 @@ export default function HarvestAdminPage() {
       try {
         data = text ? JSON.parse(text) : {};
       } catch {
-        throw new Error(`[관리자] 백필 응답 파싱 실패 (HTTP ${res.status})`);
+        throw new Error(`백필 응답 파싱 실패 (HTTP ${res.status})`);
       }
 
       if (res.ok && data.success) {
-        const msg = `[관리자] [백필 완료] ${data.updatedCount || 0}곡 분석 갱신됨 (남은 대상: ${data.remainingCount || 0}곡)`;
-        console.log(msg);
+        const msg = `${data.updatedCount || 0}곡 분석 갱신됨 (남은 대상: ${data.remainingCount || 0}곡)`;
+        console.log(`[관리자] [백필 완료] ${msg}`);
         setLastMessage(msg);
         await fetchStatus();
         await fetchSongs();
       } else {
-        const errorMsg = `[관리자] 백필 실패: ${data.error || data.message || `HTTP ${res.status}`}`;
-        console.error(errorMsg);
+        const errorMsg = `백필 실패: ${data.error || data.message || `HTTP ${res.status}`}`;
+        console.error(`[관리자] ${errorMsg}`);
         setLastMessage(errorMsg);
       }
     } catch (err: any) {
-      const errTxt = `[관리자] 백필 오류: ${err.message}`;
-      console.error(errTxt);
+      const errTxt = `백필 오류: ${err.message}`;
+      console.error(`[관리자] ${errTxt}`);
       setLastMessage(errTxt);
     } finally {
       setIsBackfilling(false);
@@ -297,8 +299,8 @@ export default function HarvestAdminPage() {
             <div className="w-12 h-12 bg-indigo-950 border border-indigo-800 rounded-xl flex items-center justify-center mx-auto text-indigo-400">
               <Lock className="w-6 h-6" />
             </div>
-            <h1 className="text-xl font-bold text-slate-100">[관리자] 관리자 인증</h1>
-            <p className="text-xs text-slate-400">수집 모니터링 페이지에 접근하려면 관리자 비밀번호를 입력하세요.</p>
+            <h1 className="text-xl font-bold text-slate-100">관리자 인증</h1>
+            <p className="text-xs text-slate-400">수집 모니터링 대시보드에 접근하려면 비밀번호를 입력하세요.</p>
           </div>
 
           <form onSubmit={handleVerify} className="space-y-4">
@@ -308,7 +310,7 @@ export default function HarvestAdminPage() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="관리자 비밀번호 입력"
+                placeholder="비밀번호 입력"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
               />
             </div>
@@ -319,7 +321,7 @@ export default function HarvestAdminPage() {
               type="submit"
               className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-sm transition shadow flex items-center justify-center gap-2"
             >
-              <Radio className="w-4 h-4" /> [관리자] 대시보드 입장
+              <Radio className="w-4 h-4" /> 대시보드 입장
             </button>
           </form>
         </div>
@@ -420,11 +422,10 @@ export default function HarvestAdminPage() {
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold flex items-center gap-1.5 text-slate-200">
-                <Radio className="w-4 h-4 text-indigo-400" />  수집 대상 밴드 ({artists.length}팀)
+                <Radio className="w-4 h-4 text-indigo-400" /> 수집 대상 밴드 ({artists.length}팀)
               </h2>
               
               <div className="flex items-center gap-1.5">
-                {/* 💡 복원된 [+ 밴드 추가] 버튼 */}
                 <button
                   type="button"
                   onClick={() => setIsAddArtistOpen(true)}
@@ -500,7 +501,7 @@ export default function HarvestAdminPage() {
             {loading ? (
               <div className="p-12 text-center text-slate-500 text-xs">음원 데이터 로드 중...</div>
             ) : filteredSongs.length === 0 ? (
-              <div className="p-12 text-center text-slate-500 text-xs"> 조건에 맞는 음원이 없습니다.</div>
+              <div className="p-12 text-center text-slate-500 text-xs">조건에 맞는 음원이 없습니다.</div>
             ) : (
               <div className="space-y-2 max-h-[580px] overflow-y-auto pr-1">
                 {filteredSongs.map((song) => (
@@ -561,7 +562,7 @@ export default function HarvestAdminPage() {
 
       </div>
 
-      {/* 💡 수집 대상 밴드 신규 등록 모달 */}
+      {/* 수집 대상 밴드 신규 등록 모달 */}
       {isAddArtistOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
