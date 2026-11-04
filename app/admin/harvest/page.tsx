@@ -15,7 +15,9 @@ import {
   Search,
   ExternalLink,
   Sliders,
-  Filter
+  Filter,
+  Plus,
+  X
 } from 'lucide-react';
 
 interface HarvestStatus {
@@ -66,6 +68,13 @@ export default function HarvestAdminPage() {
   const [selectedArtist, setSelectedArtist] = useState<string>('ALL');
   const [searchSongQuery, setSearchSongQuery] = useState<string>('');
   const [isBackfilling, setIsBackfilling] = useState<boolean>(false);
+
+  // 💡 수집 대상 밴드 추가 모달 상태
+  const [isAddArtistOpen, setIsAddArtistOpen] = useState<boolean>(false);
+  const [newArtistName, setNewArtistName] = useState<string>('');
+  const [newArtistAlias, setNewArtistAlias] = useState<string>('');
+  const [newArtistPriority, setNewArtistPriority] = useState<number>(1);
+  const [addingArtist, setAddingArtist] = useState<boolean>(false);
 
   useEffect(() => {
     const savedAuth = sessionStorage.getItem('admin_authenticated');
@@ -161,6 +170,48 @@ export default function HarvestAdminPage() {
       console.error('[관리자] 곡 목록 로드 실패:', err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleAddTargetArtist(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newArtistName.trim()) {
+      alert('[관리자] 밴드(아티스트) 이름을 입력해 주세요.');
+      return;
+    }
+
+    setAddingArtist(true);
+    console.log(`[관리자] 수집 대상 밴드 추가 시도: ${newArtistName}`);
+
+    try {
+      const res = await fetch('/api/artists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newArtistName.trim(),
+          search_alias: newArtistAlias.trim() || null,
+          priority: Number(newArtistPriority) || 1,
+        }),
+      });
+
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
+
+      if (res.ok && data.success) {
+        setLastMessage(`[관리자] [밴드 추가 완료] '${newArtistName}' 수집 큐 등록 완료`);
+        setNewArtistName('');
+        setNewArtistAlias('');
+        setNewArtistPriority(1);
+        setIsAddArtistOpen(false);
+        await fetchArtists();
+        await fetchStatus();
+      } else {
+        alert(`[관리자] 밴드 등록 실패: ${data.message || data.error || `HTTP ${res.status}`}`);
+      }
+    } catch (err: any) {
+      alert(`[관리자] 밴드 추가 통신 오류: ${err.message}`);
+    } finally {
+      setAddingArtist(false);
     }
   }
 
@@ -292,7 +343,7 @@ export default function HarvestAdminPage() {
           <div>
             <div className="flex items-center gap-2.5">
               <h1 className="text-2xl font-black bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-                [관리자] 실시간 음원 수집 및 오디오 분석 모니터
+                실시간 음원 수집 및 오디오 분석 모니터
               </h1>
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
                 수집 파이프라인
@@ -311,7 +362,7 @@ export default function HarvestAdminPage() {
               className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 border border-purple-800/80 px-3.5 py-2 rounded-xl text-xs text-purple-300 font-semibold shadow transition disabled:opacity-50"
             >
               <Sparkles className={`w-3.5 h-3.5 ${isBackfilling ? 'animate-spin' : ''}`} />
-              [관리자] 기존곡 오디오 백필
+              기존곡 오디오 백필
             </button>
 
             <button
@@ -321,7 +372,7 @@ export default function HarvestAdminPage() {
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 rounded-xl text-xs font-bold text-white shadow transition"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${triggering ? 'animate-spin' : ''}`} />
-              [관리자] 다음 밴드 즉시 수집
+              다음 밴드 즉시 수집
             </button>
           </div>
         </header>
@@ -367,19 +418,31 @@ export default function HarvestAdminPage() {
           
           {/* 좌측: 수집 대상 아티스트 큐 */}
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <h2 className="text-sm font-bold flex items-center justify-between text-slate-200">
-              <span className="flex items-center gap-1.5">
-                <Radio className="w-4 h-4 text-indigo-400" /> [관리자] 수집 대상 밴드 ({artists.length}팀)
-              </span>
-              <button 
-                onClick={() => setSelectedArtist('ALL')} 
-                className={`text-[10px] px-2 py-0.5 rounded-full border transition ${
-                  selectedArtist === 'ALL' ? 'bg-indigo-600 text-white border-indigo-500' : 'text-slate-400 border-slate-800'
-                }`}
-              >
-                전체보기
-              </button>
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold flex items-center gap-1.5 text-slate-200">
+                <Radio className="w-4 h-4 text-indigo-400" />  수집 대상 밴드 ({artists.length}팀)
+              </h2>
+              
+              <div className="flex items-center gap-1.5">
+                {/* 💡 복원된 [+ 밴드 추가] 버튼 */}
+                <button
+                  type="button"
+                  onClick={() => setIsAddArtistOpen(true)}
+                  className="text-[11px] flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition shadow"
+                >
+                  <Plus className="w-3 h-3" /> 밴드 추가
+                </button>
+
+                <button 
+                  onClick={() => setSelectedArtist('ALL')} 
+                  className={`text-[10px] px-2 py-0.5 rounded-full border transition ${
+                    selectedArtist === 'ALL' ? 'bg-indigo-600 text-white border-indigo-500' : 'text-slate-400 border-slate-800'
+                  }`}
+                >
+                  전체
+                </button>
+              </div>
+            </div>
 
             <div className="space-y-1.5 max-h-[580px] overflow-y-auto pr-1">
               {artists.map((artist) => {
@@ -418,7 +481,7 @@ export default function HarvestAdminPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <h2 className="text-sm font-bold flex items-center gap-1.5 text-slate-200">
                 <Music2 className="w-4 h-4 text-purple-400" />
-                [관리자] 수집 음원 전수 조회 ({filteredSongs.length}곡)
+                수집 음원 전수 조회 ({filteredSongs.length}곡)
                 {selectedArtist !== 'ALL' && <span className="text-indigo-400 text-xs">({selectedArtist})</span>}
               </h2>
 
@@ -435,9 +498,9 @@ export default function HarvestAdminPage() {
             </div>
 
             {loading ? (
-              <div className="p-12 text-center text-slate-500 text-xs">[관리자] 음원 데이터 로드 중...</div>
+              <div className="p-12 text-center text-slate-500 text-xs">음원 데이터 로드 중...</div>
             ) : filteredSongs.length === 0 ? (
-              <div className="p-12 text-center text-slate-500 text-xs">[관리자] 조건에 맞는 음원이 없습니다.</div>
+              <div className="p-12 text-center text-slate-500 text-xs"> 조건에 맞는 음원이 없습니다.</div>
             ) : (
               <div className="space-y-2 max-h-[580px] overflow-y-auto pr-1">
                 {filteredSongs.map((song) => (
@@ -497,6 +560,90 @@ export default function HarvestAdminPage() {
         </div>
 
       </div>
+
+      {/* 💡 수집 대상 밴드 신규 등록 모달 */}
+      {isAddArtistOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-base text-slate-100 flex items-center gap-2">
+                <Radio className="w-4 h-4 text-indigo-400" />
+                신규 수집 대상 밴드 등록
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsAddArtistOpen(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddTargetArtist} className="space-y-4 text-xs">
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">
+                  밴드 / 아티스트명 <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newArtistName}
+                  onChange={(e) => setNewArtistName(e.target.value)}
+                  placeholder="예: 잔나비, 터치드, QWER..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">
+                  iTunes 검색 별칭 (선택 사항)
+                </label>
+                <input
+                  type="text"
+                  value={newArtistAlias}
+                  onChange={(e) => setNewArtistAlias(e.target.value)}
+                  placeholder="예: JANNABI (영문명 또는 특정 검색어)"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-indigo-500"
+                />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  입력하지 않으면 밴드명 그대로 iTunes 음원을 검색합니다.
+                </span>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">수집 우선순위</label>
+                <select
+                  value={newArtistPriority}
+                  onChange={(e) => setNewArtistPriority(Number(e.target.value))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value={1}>1순위 (최우선 수집)</option>
+                  <option value={2}>2순위 (일반)</option>
+                  <option value={3}>3순위 (후순위)</option>
+                </select>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddArtistOpen(false)}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  disabled={addingArtist}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold transition shadow flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  {addingArtist ? '등록 중...' : '수집 대상에 추가'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
