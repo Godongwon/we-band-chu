@@ -1,3 +1,4 @@
+// app/api/songs/harvest-status/route.ts
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -5,73 +6,62 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // 1. 총 수집 곡 수 카운트
-    const { count: totalSongs, error: songErr } = await supabase
+    // 1. songs 테이블 전체 데이터 집계 (안전 쿼리)
+    const { data: songsData, error: songErr } = await supabase
       .from('songs')
-      .select('*', { count: 'exact', head: true });
+      .select('id, bpm, original_key, artist');
 
-    if (songErr) throw songErr;
+    if (songErr) {
+      console.error('[관리자] songs 집계 실패:', songErr.message);
+      throw songErr;
+    }
 
-    // 2. 전체 수집 대상 아티스트 수
-    const { count: totalArtists, error: artistErr } = await supabase
+    const songs = songsData || [];
+    const totalSongs = songs.length;
+    const analyzedBpmCount = songs.filter((s) => s.bpm !== null && s.bpm !== undefined).length;
+    const analyzedKeyCount = songs.filter((s) => s.original_key !== null && s.original_key !== undefined).length;
+
+    // 2. target_artists 테이블 집계
+    const { data: artistsData, error: artistErr } = await supabase
       .from('target_artists')
-      .select('*', { count: 'exact', head: true });
+      .select('name, is_active, last_harvested_at');
 
-    if (artistErr) throw artistErr;
+    if (artistErr) {
+      console.error('[관리자] target_artists 집계 실패:', artistErr.message);
+      throw artistErr;
+    }
 
-    // 3. 활성 수집 대상 아티스트 수
-    const { count: activeArtists } = await supabase
-      .from('target_artists')
-      .select('*', { count: 'exact', head: true })
-      .eq('is_active', true);
+    const artists = artistsData || [];
+    const totalArtists = artists.length;
+    const activeArtists = artists.filter((a) => a.is_active !== false).length;
 
-    // 4. BPM 실측 완료 곡 수
-    const { count: analyzedBpmCount } = await supabase
-      .from('songs')
-      .select('*', { count: 'exact', head: true })
-      .not('bpm', 'is', null);
-
-    // 5. Key(조성) 산출 완료 곡 수
-    const { count: analyzedKeyCount } = await supabase
-      .from('songs')
-      .select('*', { count: 'exact', head: true })
-      .not('original_key', 'is', null);
-
-    // 6. 가장 최근에 수집된 아티스트 정보 조회 (마지막 갱신 카드용)
-    const { data: latestArtist } = await supabase
-      .from('target_artists')
-      .select('name, last_harvested_at')
-      .not('last_harvested_at', 'is', null)
-      .order('last_harvested_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // 3. 가장 최근 수집된 밴드 추출 (마지막 갱신용)
+    const harvestedArtists = artists
+      .filter((a) => a.last_harvested_at)
+      .sort((a, b) => new Date(b.last_harvested_at!).getTime() - new Date(a.last_harvested_at!).getTime());
 
     let lastExecution = null;
-    if (latestArtist && latestArtist.last_harvested_at) {
-      // 해당 아티스트의 수집 곡 수 카운트
-      const { count: artistSongCount } = await supabase
-        .from('songs')
-        .select('*', { count: 'exact', head: true })
-        .eq('artist', latestArtist.name);
-
+    if (harvestedArtists.length > 0) {
+      const latest = harvestedArtists[0];
+      const count = songs.filter((s) => s.artist === latest.name).length;
       lastExecution = {
-        artist: latestArtist.name,
-        count: artistSongCount || 0,
-        time: latestArtist.last_harvested_at,
+        artist: latest.name,
+        count: count,
+        time: latest.last_harvested_at,
       };
     }
 
     return NextResponse.json({
       success: true,
-      totalSongs: totalSongs || 0,
-      totalArtists: totalArtists || 0,
-      activeArtists: activeArtists ?? totalArtists ?? 0,
-      analyzedBpmCount: analyzedBpmCount || 0,
-      analyzedKeyCount: analyzedKeyCount || 0,
+      totalSongs,
+      totalArtists,
+      activeArtists,
+      analyzedBpmCount,
+      analyzedKeyCount,
       lastExecution,
     });
   } catch (error: any) {
-    console.error('[관리자] harvest-status 에러:', error.message);
+    console.error('[관리자] harvest-status 에러 발생:', error.message);
     return NextResponse.json(
       {
         success: false,
