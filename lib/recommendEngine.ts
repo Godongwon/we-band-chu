@@ -131,21 +131,17 @@ export async function getDbFallbackSongs(
   bandProfile?: { vocal_gender?: string; [key: string]: any }
 ): Promise<RecommendedSong[]> {
   try {
-    // 1. 아티스트별 성별 메타데이터 동적 조회 (하드코딩 배제)
+    // 1. target_artists 테이블에서 성별 목록 가져오기
     const { data: artistsData } = await supabase
       .from('target_artists')
       .select('name, vocal_gender');
 
-    const artistGenderMap = new Map<string, string>();
-    if (artistsData) {
-      for (const a of artistsData) {
-        if (a.name) {
-          artistGenderMap.set(a.name.toLowerCase().trim(), a.vocal_gender || 'MALE');
-        }
-      }
-    }
+    const artistGenderList = (artistsData || []).map((a) => ({
+      name: (a.name || '').toLowerCase().replace(/\s+/g, ''),
+      gender: a.vocal_gender || 'MALE',
+    }));
 
-    // 2. 카테고리(BPM) 조건 쿼리
+    // 2. 카테고리별 템포 쿼리
     let query = supabase.from('songs').select('*');
 
     if (category === 'HIGH_TENSION') {
@@ -158,40 +154,47 @@ export async function getDbFallbackSongs(
 
     let { data: dbSongs } = await query.limit(100);
 
-    // 해당 BPM 조건의 곡이 부족할 경우 전체 곡에서 보충
     if (!dbSongs || dbSongs.length === 0) {
       const { data: anySongs } = await supabase.from('songs').select('*').limit(100);
       dbSongs = anySongs || [];
     }
 
-    // 3. 보컬 성별(FEMALE / MALE) 분리 필터링
-    const targetGender = bandProfile?.vocal_gender; // 'FEMALE' | 'MALE' | 'MIXED' 등
+    const targetGender = bandProfile?.vocal_gender; // 'FEMALE' | 'MALE' | 'ALL'
     const excludeSet = new Set(excludeTitles.map((t) => t.toLowerCase().trim()));
 
+    // 3. 괄호 제거 정규화 및 성별 매칭 필터링
     const filtered = (dbSongs || []).filter((s: any) => {
-      // (1) 기추천/제외 곡 탈락
+      // 기추천 곡 제외
       if (excludeSet.has((s.title || '').toLowerCase().trim())) {
         return false;
       }
 
-      // (2) 보컬 성별 필터링
       if (targetGender && targetGender !== 'ALL') {
-        const cleanArtist = (s.artist || '').toLowerCase().trim();
-        const artistGender = artistGenderMap.get(cleanArtist);
+        // "쏜애플 (THORNAPPLE)" -> "쏜애플" 로 괄호 및 공백 제거
+        const rawArtist = (s.artist || '').toLowerCase();
+        const cleanArtist = rawArtist.replace(/\(.*?\)/g, '').replace(/\[.*?\]/g, '').replace(/\s+/g, '');
+
+        // target_artists 목록과 유연하게 부분 매칭
+        const matched = artistGenderList.find(
+          (a) => cleanArtist.includes(a.name) || a.name.includes(cleanArtist)
+        );
+
+        // 매칭된 정보가 있으면 해당 성별 사용, 없으면 남성(MALE) 기본값 간주
+        const songGender = matched ? matched.gender : 'MALE';
 
         if (targetGender === 'FEMALE') {
-          // 여성 밴드 요청 시: FEMALE 또는 MIXED만 통과
-          if (artistGender !== 'FEMALE' && artistGender !== 'MIXED') return false;
+          // 여성 보컬 밴드: FEMALE, MIXED만 허용 (쏜애플 등 MALE 완벽 탈락)
+          if (songGender !== 'FEMALE' && songGender !== 'MIXED') return false;
         } else if (targetGender === 'MALE') {
-          // 남성 밴드 요청 시: MALE 또는 MIXED만 통과
-          if (artistGender !== 'MALE' && artistGender !== 'MIXED') return false;
+          // 남성 보컬 밴드: MALE, MIXED만 허용
+          if (songGender !== 'MALE' && songGender !== 'MIXED') return false;
         }
       }
 
       return true;
     });
 
-    // 4. 셔플 및 limit 추출
+    // 4. 셔플 및 응답 생성
     return filtered
       .sort(() => Math.random() - 0.5)
       .slice(0, limit)
@@ -205,13 +208,12 @@ export async function getDbFallbackSongs(
         has_live_performance: !!s.live_url,
         has_instrument_cover: !!s.cover_url,
         youtube_url: s.youtube_url || '',
-        reason: `${targetGender === 'FEMALE' ? '여성 보컬' : '남성 보컬'} 맞춤 ${category} 테마곡`,
+        reason: `${targetGender === 'FEMALE' ? '여성 보컬' : '남성 보컬'} 맞춤 ${category} 추천곡`,
       }));
   } catch {
     return [];
   }
 }
-
 
 // LLM에게 상세 곡 정보(실제 BPM, 세부 장르, 키, 이유)를 JSON 규격으로 생성하도록 요청
 async function generateDetailedSongsWithLLM(
