@@ -2,6 +2,15 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
+  serverExternalPackages: [
+    '@audio/decode',
+    '@audio/decode-ape',
+    '@audio/decode-wavpack',
+    '@audio/decode-tta',
+    '@audio/decode-mpc',
+    '@audio/decode-eac3',
+    '@audio/decode-dsd'
+  ],
   experimental: {
     agentFeedback: true,
   },
