@@ -639,9 +639,15 @@ export default function Home() {
     setActionLoadingId(recSong.title);
 
     try {
-      const searchRes = await fetch(`/api/youtube?q=${encodeURIComponent(recSong.artist + ' ' + recSong.title)}&page=1`);
-      const searchData = await searchRes.json();
-      const matchedTrack = searchData.items?.[0];
+      let matchedTrack: any = null;
+      try {
+        const searchRes = await fetch(`/api/youtube?q=${encodeURIComponent(recSong.artist + ' ' + recSong.title)}&page=1`);
+        const text = await searchRes.text();
+        const searchData = text ? JSON.parse(text) : {};
+        matchedTrack = searchData.items?.[0];
+      } catch (ytErr) {
+        console.warn('유튜브 매칭 스킵:', ytErr);
+      }
 
       const finalTitle = matchedTrack?.title || recSong.title;
       const finalArtist = matchedTrack?.artist || recSong.artist;
@@ -682,14 +688,15 @@ export default function Home() {
         .maybeSingle();
 
       if (!existingRep) {
-        await supabase.from('band_repertoire').insert({
+        const { error: repErr } = await supabase.from('band_repertoire').insert({
           band_id: currentBand.id,
           song_id: targetSongId,
           status: 'WISHLIST',
           played_key: recSong.recommended_key || recSong.original_key || 'C',
-          band_notes: 'AI 추천 레퍼토리 추가 (정식 음원 매칭 완료)',
+          band_notes: 'AI 추천 레퍼토리 추가' + (finalYoutubeUrl ? ' (정식 음원 매칭)' : ''),
           votes_count: 1,
         });
+        if (repErr) throw repErr;
       }
 
       await loadBandWorkspace(currentBand);
