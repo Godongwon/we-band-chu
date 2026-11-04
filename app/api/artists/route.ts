@@ -69,16 +69,23 @@ async function inspectBandProfileWithLLM(bandName: string) {
 
 export async function GET() {
   try {
+    // 💡 조건을 단순화하여 모든 등록 밴드를 안전하게 로드
     const { data: artists, error } = await supabase
       .from('target_artists')
       .select('*')
-      .eq('is_active', true)
-      .order('priority', { ascending: true })
-      .order('last_harvested_at', { ascending: true, nullsFirst: true });
+      .order('id', { ascending: true });
 
-    if (error) throw error;
-    return NextResponse.json({ success: true, artists: artists || [] });
+    if (error) {
+      console.error('[관리자] target_artists 조회 에러:', error.message);
+      throw error;
+    }
+
+    return NextResponse.json({ 
+      success: true, 
+      artists: artists || [] 
+    });
   } catch (error: any) {
+    console.error('[관리자] target_artists GET 실패:', error.message);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
