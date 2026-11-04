@@ -420,11 +420,11 @@ export default function Home() {
     setLoading(true);
     console.log(`[클라] '${band.name}' 레퍼토리 로딩 시작`);
 
-    const { data: repData, error } = await supabase
-      .from('band_repertoire')
-      .select(`id, song_id, status, played_key, band_notes, votes_count, songs (*)`)
-      .eq('band_id', band.id)
-      .order('created_at', { ascending: false });
+const { data: repData, error } = await supabase
+  .from('band_repertoire')
+  .select(`id, song_id, status, played_key, band_notes, votes_count, songs:song_id (*)`)
+  .eq('band_id', band.id)
+  .order('created_at', { ascending: false });
     
     if (error) {
       console.error('[클라] 레퍼토리 로드 실패:', error.message);
@@ -503,7 +503,7 @@ export default function Home() {
 
   function handleReportSong(badSong: any) {
     const songTitle = badSong.title;
-    if (!confirm(`[클라] '${songTitle} (${badSong.artist})' 곡을 잘못된 데이터로 신고하고 목록에서 제외하시겠습니까?`)) {
+    if (!confirm(` '${songTitle} (${badSong.artist})' 곡을 잘못된 데이터로 신고하고 목록에서 제외하시겠습니까?`)) {
       return;
     }
     console.warn(`[클라] 곡 신고 및 제외 처리: ${songTitle}`);
@@ -661,8 +661,11 @@ export default function Home() {
     }
   }
 
-  async function handleAddAiRecommendedSong(recSong: any) {
-    if (!currentBand) return;
+ async function handleAddAiRecommendedSong(recSong: any) {
+    if (!currentBand) {
+      alert('[클라] 로그인된 밴드 정보가 없습니다.');
+      return;
+    }
     setActionLoadingId(recSong.title);
     console.log(`[클라] AI 추천곡 담기 시작: ${recSong.title}`);
 
@@ -681,14 +684,18 @@ export default function Home() {
       const finalArtist = matchedTrack?.artist || recSong.artist;
       const finalYoutubeUrl = matchedTrack?.youtubeUrl || '';
 
-      let { data: existingSong } = await supabase
+      // 1. 기존 곡 존재 여부 확인
+      const { data: existingSong, error: findErr } = await supabase
         .from('songs')
         .select('id')
         .ilike('title', finalTitle)
         .maybeSingle();
 
+      if (findErr) throw new Error(`곡 조회 실패: ${findErr.message}`);
+
       let targetSongId = existingSong?.id;
 
+      // 2. 신규 곡 등록
       if (!targetSongId) {
         const { data: newSong, error: insertErr } = await supabase
           .from('songs')
@@ -704,33 +711,41 @@ export default function Home() {
           .select('id')
           .single();
 
-        if (insertErr) throw insertErr;
+        if (insertErr) throw new Error(`신규 곡 등록 실패: ${insertErr.message}`);
         targetSongId = newSong.id;
       }
 
-      const { data: existingRep } = await supabase
+      // 3. 밴드 레퍼토리에 이미 등록되어 있는지 확인
+      const { data: existingRep, error: repFindErr } = await supabase
         .from('band_repertoire')
         .select('id')
         .eq('band_id', currentBand.id)
         .eq('song_id', targetSongId)
         .maybeSingle();
 
-      if (!existingRep) {
-        const { error: repErr } = await supabase.from('band_repertoire').insert({
-          band_id: currentBand.id,
-          song_id: targetSongId,
-          status: 'WISHLIST',
-          played_key: recSong.recommended_key || recSong.original_key || 'C',
-          band_notes: 'AI 추천 레퍼토리 추가' + (finalYoutubeUrl ? ' (정식 음원 매칭)' : ''),
-          votes_count: 1,
-        });
-        if (repErr) throw repErr;
+      if (repFindErr) throw new Error(`레퍼토리 중복 검사 실패: ${repFindErr.message}`);
+
+      if (existingRep) {
+        alert('[클라] 이미 우리 밴드 레퍼토리에 등록되어 있는 곡입니다.');
+        return;
       }
+
+      // 4. 레퍼토리에 등록
+      const { error: repInsertErr } = await supabase.from('band_repertoire').insert({
+        band_id: currentBand.id,
+        song_id: targetSongId,
+        status: 'WISHLIST',
+        played_key: recSong.recommended_key || recSong.original_key || 'C',
+        band_notes: 'AI 추천 레퍼토리 추가' + (finalYoutubeUrl ? ' (정식 음원 매칭)' : ''),
+        votes_count: 1,
+      });
+
+      if (repInsertErr) throw new Error(`레퍼토리 등록 실패: ${repInsertErr.message}`);
 
       console.log(`[클라] AI 추천곡 담기 완료: ${finalTitle}`);
       await loadBandWorkspace(currentBand);
     } catch (err: any) {
-      console.error('[클라] 추천곡 등록 실패:', err.message);
+      console.error('[클라] 추천곡 등록 실패 상세:', err);
       alert('[클라] 추천곡 등록 실패: ' + err.message);
     } finally {
       setActionLoadingId(null);
@@ -1144,10 +1159,10 @@ export default function Home() {
           </div>
 
           {loading ? (
-            <div className="p-8 text-center text-slate-500 text-sm">[클라] 레퍼토리 로드 중...</div>
+            <div className="p-8 text-center text-slate-500 text-sm">레퍼토리 로드 중...</div>
           ) : repertoire.length === 0 ? (
             <div className="bg-slate-900/50 border border-dashed border-slate-800 p-8 rounded-2xl text-center text-slate-500 text-xs sm:text-sm">
-              [클라] 등록된 곡이 없습니다. 검색창이나 오른쪽 추천 피드에서 곡을 담아보세요!
+              등록된 곡이 없습니다. 검색창이나 오른쪽 추천 피드에서 곡을 담아보세요!
             </div>
           ) : (
             <div className="space-y-2.5">
@@ -1232,7 +1247,7 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={async () => {
-                          if (!confirm('[클라] 레퍼토리에서 제거하시겠습니까?')) return;
+                          if (!confirm(' 레퍼토리에서 제거하시겠습니까?')) return;
                           console.log(`[클라] 레퍼토리 삭제: ${item.songs?.title}`);
                           setRepertoire((prev) => prev.filter((r) => r.id !== item.id));
                           await supabase.from('band_repertoire').delete().eq('id', item.id);
