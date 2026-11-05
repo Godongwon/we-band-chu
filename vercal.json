@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/songs/backfill-audio",
-      "schedule": "*/10 * * * *"
+      "schedule": "* * * * *"
     }
   ]
 }
