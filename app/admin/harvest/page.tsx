@@ -143,17 +143,20 @@ export default function HarvestAdminPage() {
       setIsAuthenticated(true);
     }
   }, []);
-
-  const refreshAllData = async () => {
-    setIsAutoRefreshing(true);
-    try {
-      await Promise.all([fetchArtists(), fetchSongs(), fetchReports()]);
-    } catch (e) {
-      console.error('[자동 갱신 오류]:', e);
-    } finally {
-      setIsAutoRefreshing(false);
-    }
-  };
+// app/admin/harvest/page.tsx 내 자동 갱신 함수 수정
+const refreshAllData = async () => {
+  setIsAutoRefreshing(true);
+  try {
+    await Promise.all([fetchArtists(), fetchSongs(), fetchReports()]);
+    
+    // 💡 미분석 곡이 남아있는 경우 백그라운드에서 1회 자동 백필 실행
+    fetch('/api/songs/backfill-audio', { method: 'POST' }).catch(() => {});
+  } catch (e) {
+    console.error('[자동 갱신 오류]:', e);
+  } finally {
+    setIsAutoRefreshing(false);
+  }
+};
 
   useEffect(() => {
     if (!isAuthenticated) return;
