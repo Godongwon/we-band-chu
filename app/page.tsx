@@ -7,11 +7,7 @@ import {
   RefreshCw, 
   Plus, 
   AlertCircle, 
-  Flame, 
-  SlidersHorizontal, 
-  Heart, 
   Search, 
-  Radio, 
   LogOut 
 } from 'lucide-react';
 
@@ -30,19 +26,18 @@ interface SongItem {
 }
 
 export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
-  // 기존 currentBand 상태/props를 우선 참조하고, 없을 때만 기본값 폴백
+  // 밴드 프로필 상태 (currentBand 동적 동기화)
   const [bandProfile, setBandProfile] = useState({
-    name: currentBand?.name || '우리 밴드',
+    name: currentBand?.name || '루시드 밴드',
     vocal_gender: currentBand?.vocal_gender || 'FEMALE',
     guitar_count: currentBand?.guitar_count ?? 1,
     has_keys: currentBand?.has_keys ?? true,
   });
 
-  // 상위나 컨텍스트에서 currentBand가 변경될 경우 동기화
   useEffect(() => {
     if (currentBand) {
       setBandProfile({
-        name: currentBand.name || '우리 밴드',
+        name: currentBand.name || '루시드 밴드',
         vocal_gender: currentBand.vocal_gender || 'FEMALE',
         guitar_count: currentBand.guitar_count ?? 1,
         has_keys: currentBand.has_keys ?? true,
@@ -56,7 +51,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
   const [loading, setLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // 추천곡 불러오기 함수
+  // 추천곡 API 호출
   async function fetchRecommendations(tabKey: string = activeTab) {
     setLoading(true);
     try {
@@ -85,19 +80,16 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     fetchRecommendations(activeTab);
   }, [activeTab]);
 
-  // 💡 [핵심] 느낌표(!) 클릭 시 Supabase song_reports로 직접 전송하는 신고 함수
+  // 신고 버튼(!) 클릭 핸들러 (Supabase song_reports로 전송)
   async function handleReportSong(song: SongItem) {
-    console.log(`[클라] 곡 신고 및 제외 처리: ${song.title}`);
-
     const reason = prompt(
-      `'${song.title} (${song.artist})' 곡을 신고하시겠습니까?\n사유를 입력해 주세요 (예: 비밴드 곡, 보컬 성별 오류, 영상 오류):`,
+      `'${song.title} (${song.artist})' 곡을 신고하시겠습니까?\n사유를 입력해 주세요 (예: 비밴드 곡, 보컬 성별 오류, 음원 오류):`,
       '비밴드 곡 또는 잘못된 음원 정보'
     );
 
-    if (reason === null) return; // 취소 누른 경우
+    if (reason === null) return;
 
     try {
-      // 1. 백엔드 API 호출하여 DB에 즉시 영구 저장
       const res = await fetch('/api/songs/report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -110,8 +102,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
       });
 
       const data = await res.json();
-      console.log('[클라] 신고 전송 결과:', data);
-
       if (res.ok && data.success) {
         alert('신고가 접수되었습니다. 관리자 대시보드에서 검토 후 처리됩니다.');
       } else {
@@ -122,11 +112,11 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
       alert(`신고 통신 에러: ${err.message}`);
     }
 
-    // 2. 현재 화면의 추천 목록에서 해당 곡 즉시 숨기기
+    // 화면 추천 목록에서 즉시 제거
     setRecommendedSongs((prev) => prev.filter((s) => s.title !== song.title));
   }
 
-  // 레퍼토리에 담기
+  // 레퍼토리 추가
   function handleAddToRepertoire(song: SongItem) {
     if (repertoire.some((r) => r.title === song.title)) {
       alert('이미 레퍼토리에 담긴 곡입니다.');
@@ -140,7 +130,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     <main className="min-h-screen bg-[#070913] text-slate-100 p-4 sm:p-6 font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* 상단 네비게이션 헤더 */}
+        {/* 헤더 */}
         <header className="flex items-center justify-between pb-4 border-b border-slate-900">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5">
@@ -170,7 +160,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
           </button>
         </header>
 
-        {/* 상단 곡 검색 인풋 */}
+        {/* 곡 검색창 */}
         <div className="relative">
           <Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" />
           <input
@@ -182,10 +172,10 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
           />
         </div>
 
-        {/* 메인 2열 그리드 레이아웃 */}
+        {/* 2열 메인 컨텐츠 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
           
-          {/* 좌측 패널: 우리 밴드 레퍼토리 */}
+          {/* 좌측: 우리 밴드 레퍼토리 */}
           <div className="bg-[#0b0e1e]/60 border border-slate-800/60 rounded-2xl p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold flex items-center gap-2 text-slate-200">
@@ -213,7 +203,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
             )}
           </div>
 
-          {/* 우측 패널: 맞춤 합주 추천 10곡 */}
+          {/* 우측: 맞춤 합주 추천 10곡 */}
           <div className="bg-[#0b0e1e]/60 border border-slate-800/60 rounded-2xl p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold flex items-center gap-2 text-slate-200">
@@ -302,7 +292,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
                     key={idx}
                     className="p-3.5 bg-[#0d1021]/80 hover:bg-[#111429] border border-slate-800/80 hover:border-slate-700/80 rounded-2xl flex items-center justify-between gap-3 text-xs transition shadow-sm"
                   >
-                    {/* 곡 메타데이터 정보 */}
+                    {/* 곡 정보 */}
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-slate-100 text-sm truncate">{song.title}</span>
@@ -319,17 +309,32 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
                         <span>{song.bpm}bpm</span>
                       </div>
 
-                      <div className="flex items-center gap-2 pt-1 text-[10px]">
-                        <span className="text-amber-400/90 flex items-center gap-0.5">
+                      {/* 커버 영상 및 라이브 무대 유튜브 링크 연동 버튼 */}
+                      <div className="flex items-center gap-3 pt-1 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const query = `${song.artist} ${song.title} 밴드 커버`;
+                            window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, '_blank');
+                          }}
+                          className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
+                        >
                           🎯 커버 영상
-                        </span>
-                        <span className="text-slate-400 flex items-center gap-0.5">
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const query = `${song.artist} ${song.title} 라이브`;
+                            window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, '_blank');
+                          }}
+                          className="text-slate-400 hover:text-slate-200 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
+                        >
                           📺 라이브 무대
-                        </span>
+                        </button>
                       </div>
                     </div>
 
-                    {/* 액션 버튼 그룹 (+ 담기 / ! 신고) */}
+                    {/* 액션 버튼 (+ 담기 / ! 신고) */}
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         type="button"
@@ -339,7 +344,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
                         <Plus className="w-3.5 h-3.5" /> 담기
                       </button>
 
-                      {/* 💡 [신고 버튼] 느낌표(!) 클릭 시 handleReportSong 실행 */}
                       <button
                         type="button"
                         onClick={() => handleReportSong(song)}

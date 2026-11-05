@@ -1,4 +1,3 @@
-// app/admin/harvest/page.tsx 전체 코드
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
@@ -82,6 +81,7 @@ export default function HarvestAdminPage() {
   const [newArtistPriority, setNewArtistPriority] = useState<number>(1);
   const [addingArtist, setAddingArtist] = useState<boolean>(false);
 
+  // 상단 지표 계산 (최신 수집 음원 기반 갱신 시간 산출)
   const stats = useMemo(() => {
     const totalSongs = songs.length;
     const totalArtists = artists.length;
@@ -93,19 +93,28 @@ export default function HarvestAdminPage() {
     const bpmRate = totalSongs > 0 ? Math.round((analyzedBpmCount / totalSongs) * 100) : 0;
     const keyRate = totalSongs > 0 ? Math.round((analyzedKeyCount / totalSongs) * 100) : 0;
 
-    const harvestedArtists = artists
-      .filter((a) => a.last_harvested_at)
-      .sort((a, b) => new Date(b.last_harvested_at!).getTime() - new Date(a.last_harvested_at!).getTime());
-
     let lastExecution = null;
-    if (harvestedArtists.length > 0) {
-      const latest = harvestedArtists[0];
-      const count = songs.filter((s) => s.artist === latest.name).length;
+    const latestSong = songs[0];
+
+    if (latestSong && latestSong.created_at) {
       lastExecution = {
-        artist: latest.name,
-        count: count,
-        time: latest.last_harvested_at!,
+        artist: latestSong.artist,
+        count: songs.filter((s) => s.artist === latestSong.artist).length,
+        time: latestSong.created_at,
       };
+    } else {
+      const harvestedArtists = artists
+        .filter((a) => a.last_harvested_at)
+        .sort((a, b) => new Date(b.last_harvested_at!).getTime() - new Date(a.last_harvested_at!).getTime());
+
+      if (harvestedArtists.length > 0) {
+        const latest = harvestedArtists[0];
+        lastExecution = {
+          artist: latest.name,
+          count: songs.filter((s) => s.artist === latest.name).length,
+          time: latest.last_harvested_at!,
+        };
+      }
     }
 
     return {
@@ -127,6 +136,7 @@ export default function HarvestAdminPage() {
     }
   }, []);
 
+  // 과도한 15초 곡 목록 전수 조회를 방지하고 가벼운 상태만 주기적 확인
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -136,9 +146,8 @@ export default function HarvestAdminPage() {
 
     const interval = setInterval(() => {
       fetchArtists();
-      fetchSongs();
       fetchReports();
-    }, 15000);
+    }, 30000);
 
     return () => clearInterval(interval);
   }, [isAuthenticated]);
@@ -197,7 +206,6 @@ export default function HarvestAdminPage() {
     }
   }
 
-  // 신고 내역 로드
   async function fetchReports() {
     try {
       const res = await fetch('/api/admin/reports');
@@ -211,7 +219,6 @@ export default function HarvestAdminPage() {
     }
   }
 
-  // 신고 곡 완전 삭제 (DB에서 영구 삭제)
   async function handleDeleteReportedSong(report: ReportedSong) {
     if (!confirm(`'${report.title} (${report.artist})' 곡을 DB에서 영구 삭제하시겠습니까?`)) return;
 
@@ -232,7 +239,6 @@ export default function HarvestAdminPage() {
     }
   }
 
-  // 신고 기각 (정상곡 유지)
   async function handleDismissReport(report: ReportedSong) {
     try {
       const res = await fetch('/api/admin/reports', {
@@ -543,7 +549,6 @@ export default function HarvestAdminPage() {
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
-            {/* 💡 신고된 음원 관리 버튼 */}
             <button
               type="button"
               onClick={() => setIsReportsOpen(true)}
@@ -857,7 +862,7 @@ export default function HarvestAdminPage() {
 
       </div>
 
-      {/* 💡 신고된 음원 관리 모달 */}
+      {/* 신고된 음원 관리 모달 */}
       {isReportsOpen && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
@@ -899,7 +904,6 @@ export default function HarvestAdminPage() {
                         </div>
                       </div>
 
-                      {/* 유튜브 링크 열기 */}
                       {report.youtube_url ? (
                         <a
                           href={report.youtube_url}
@@ -915,7 +919,6 @@ export default function HarvestAdminPage() {
                       )}
                     </div>
 
-                    {/* 액션 버튼 영역 */}
                     <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-900">
                       <button
                         type="button"
@@ -942,7 +945,7 @@ export default function HarvestAdminPage() {
         </div>
       )}
 
-      {/* 수집 대상 밴드 신규 등록 모달 */}
+      {/* 수집 대상 밴드 등록 모달 */}
       {isAddArtistOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
