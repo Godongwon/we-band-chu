@@ -95,6 +95,9 @@ export default function HarvestAdminPage() {
   const [isDeletingSelected, setIsDeletingSelected] = useState<boolean>(false);
   const [lastMessage, setLastMessage] = useState<string>('');
 
+  // 💡 [신규] LLM 분석 로딩 상태
+  const [refreshingId, setRefreshingId] = useState<string | null>(null);
+
   const [selectedArtist, setSelectedArtist] = useState<string>('ALL');
   const [searchSongQuery, setSearchSongQuery] = useState<string>('');
   const [isBackfilling, setIsBackfilling] = useState<boolean>(false);
@@ -273,6 +276,35 @@ export default function HarvestAdminPage() {
       }
     } catch (err: any) {
       console.error('[관리자] 제보 목록 로드 실패:', err.message);
+    }
+  }
+
+  // 💡 [신규] LLM 분석 핸들러
+  async function handleRefreshWithLLM(e: React.MouseEvent, artist: TargetArtist) {
+    e.stopPropagation();
+    if (!confirm(`'${artist.name}' 밴드의 검색 키워드(search_alias)와 보컬 성별을 LLM으로 분석할까요?`)) {
+      return;
+    }
+
+    setRefreshingId(artist.id);
+    try {
+      const res = await fetch('/api/artists/refresh-llm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: artist.id, name: artist.name }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLastMessage(data.message);
+        await fetchArtists();
+      } else {
+        alert(`분석 실패: ${data.message || '오류 발생'}`);
+      }
+    } catch (err: any) {
+      alert(`통신 오류: ${err.message}`);
+    } finally {
+      setRefreshingId(null);
     }
   }
 
@@ -663,7 +695,7 @@ export default function HarvestAdminPage() {
           </div>
         )}
 
-        {/* 💡 [신규] 지표 카드 바로 위 1열 액션 툴바 */}
+        {/* 1열 액션 툴바 */}
         <div className="flex items-center justify-start gap-2.5 flex-wrap bg-slate-900/40 border border-slate-800/60 p-2.5 rounded-2xl">
           <button
             type="button"
@@ -845,6 +877,7 @@ export default function HarvestAdminPage() {
                   .map((artist) => {
                     const isSelected = selectedArtist === artist.name;
                     const isHarvestCompleted = artist.priority === 3 && !!artist.last_harvested_at;
+                    const isAnalyzing = refreshingId === artist.id;
 
                     return (
                       <div
@@ -869,7 +902,19 @@ export default function HarvestAdminPage() {
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
+                        {/* 💡 [수정] 노란색 영역에 LLM 분석 버튼 삽입 완료 */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            disabled={isAnalyzing}
+                            onClick={(e) => handleRefreshWithLLM(e, artist)}
+                            className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/70 text-indigo-300 text-[10px] font-semibold transition disabled:opacity-50 shadow-sm"
+                            title="LLM으로 검색 키워드(search_alias) 및 보컬 성별 분석"
+                          >
+                            <Sparkles className={`w-3 h-3 ${isAnalyzing ? 'animate-spin' : ''}`} />
+                            <span>{isAnalyzing ? '분석 중...' : 'LLM 분석'}</span>
+                          </button>
+
                           {isHarvestCompleted ? (
                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800 font-semibold flex items-center gap-0.5">
                               <Check className="w-2.5 h-2.5" /> 수집완료
@@ -1048,7 +1093,7 @@ export default function HarvestAdminPage() {
                             href={youtubeTargetUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            title={`YouTube에서 '${song.artist} - ${song.title}' 듣기/확인`}
+                            title={`YouTube에서 '${song.artist} ${song.title}' 듣기/확인`}
                             className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-800/80 text-rose-300 hover:text-rose-100 text-[11px] font-semibold transition shadow-sm"
                           >
                             <Play className="w-3 h-3 fill-rose-300 text-rose-300" />
@@ -1244,7 +1289,7 @@ export default function HarvestAdminPage() {
                           rel="noopener noreferrer"
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-950/60 border border-rose-800/80 text-rose-300 hover:bg-rose-900 transition shrink-0"
                         >
-                          <ExternalLink className="w-3.5 h-3.5" />
+                          <ExternalLink className="w-3 h-3" />
                           YouTube 확인
                         </a>
                       ) : (
