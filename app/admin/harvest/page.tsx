@@ -21,6 +21,8 @@ import {
   Timer,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Play,
   Inbox
 } from 'lucide-react';
@@ -58,7 +60,6 @@ interface ReportedSong {
   original_key: string | null;
 }
 
-// 💡 제보 곡 데이터 구조
 interface SuggestionSong {
   id: string;
   title: string;
@@ -80,13 +81,14 @@ export default function HarvestAdminPage() {
   const [reports, setReports] = useState<ReportedSong[]>([]);
   const [isReportsOpen, setIsReportsOpen] = useState<boolean>(false);
 
-  // 💡 [2단계] 제보받은 곡 모달 및 데이터 상태
   const [suggestions, setSuggestions] = useState<SuggestionSong[]>([]);
   const [isSuggestionsOpen, setIsSuggestionsOpen] = useState<boolean>(false);
   const [harvestingSuggestionId, setHarvestingSuggestionId] = useState<string | null>(null);
   const [previewHarvestData, setPreviewHarvestData] = useState<{ [id: string]: any }>({});
 
-  const [isArtistPanelOpen, setIsArtistPanelOpen] = useState<boolean>(false);
+  // 💡 패널 접기/펼치기 상태 관리
+  const [isArtistPanelOpen, setIsArtistPanelOpen] = useState<boolean>(false); // 밴드 패널 (기본 접힘)
+  const [isSongPanelOpen, setIsSongPanelOpen] = useState<boolean>(true);      // 수집 음원 패널 (기본 펼침)
 
   const [loading, setLoading] = useState<boolean>(false);
   const [triggering, setTriggering] = useState<boolean>(false);
@@ -263,7 +265,6 @@ export default function HarvestAdminPage() {
     }
   }
 
-  // 💡 제보 목록 조회
   async function fetchSuggestions() {
     try {
       const res = await fetch('/api/songs/suggest');
@@ -276,7 +277,6 @@ export default function HarvestAdminPage() {
     }
   }
 
-  // 💡 [4단계] 제보 곡 단일 우선수집 실행
   async function handleHarvestSingleSuggestion(suggestion: SuggestionSong) {
     setHarvestingSuggestionId(suggestion.id);
     try {
@@ -304,7 +304,6 @@ export default function HarvestAdminPage() {
     }
   }
 
-  // 💡 [5 & 6단계] 결과 확인 후 최종 DB 추가 및 밴드 동기화
   async function handleConfirmAddSuggestion(suggestion: SuggestionSong) {
     const songData = previewHarvestData[suggestion.id];
     if (!songData) return;
@@ -334,7 +333,6 @@ export default function HarvestAdminPage() {
     }
   }
 
-  // 제보 반려
   async function handleDismissSuggestion(suggestionId: string) {
     if (!confirm('이 제보를 반려 처리하시겠습니까?')) return;
     try {
@@ -658,7 +656,6 @@ export default function HarvestAdminPage() {
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
-            {/* 💡 [2단계] 제보받은 곡 버튼 (대기 건수 뱃지) */}
             <button
               type="button"
               onClick={() => setIsSuggestionsOpen(true)}
@@ -799,10 +796,10 @@ export default function HarvestAdminPage() {
           </div>
         </div>
 
-        {/* 메인 레이아웃 */}
+        {/* 메인 레이아웃 (밴드 패널 + 수집 음원 패널 모두 접기/펼치기 가능) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           
-          {/* 좌측: 수집 대상 아티스트 큐 */}
+          {/* 좌측: 수집 대상 밴드 패널 */}
           {isArtistPanelOpen ? (
             <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3 transition-all">
               <div className="flex items-center justify-between">
@@ -901,7 +898,7 @@ export default function HarvestAdminPage() {
               </div>
             </div>
           ) : (
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3 flex flex-col items-center gap-3">
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3 flex flex-col items-center gap-2">
               <button
                 type="button"
                 onClick={() => setIsArtistPanelOpen(true)}
@@ -919,17 +916,28 @@ export default function HarvestAdminPage() {
             </div>
           )}
 
-          {/* 우측: 수집 음원 패널 */}
+          {/* 우측: 수집 음원 패널 (접기/펼치기 가능) */}
           <div className={`${isArtistPanelOpen ? 'lg:col-span-2' : 'lg:col-span-3'} bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3 transition-all`}>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            {/* 수집 음원 헤더 바 (접기/펼치기 버튼 포함) */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-800/60 pb-3">
               <div className="flex items-center gap-3">
-                <h2 className="text-sm font-bold flex items-center gap-1.5 text-slate-200">
-                  <Music2 className="w-4 h-4 text-purple-400" />
-                  수집 음원 ({filteredSongs.length}곡)
-                  {selectedArtist !== 'ALL' && <span className="text-indigo-400 text-xs">({selectedArtist})</span>}
-                </h2>
+                <div className="flex items-center gap-1.5">
+                  <h2 className="text-sm font-bold flex items-center gap-1.5 text-slate-200">
+                    <Music2 className="w-4 h-4 text-purple-400" />
+                    수집 음원 ({filteredSongs.length}곡)
+                    {selectedArtist !== 'ALL' && <span className="text-indigo-400 text-xs">({selectedArtist})</span>}
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setIsSongPanelOpen((prev) => !prev)}
+                    title={isSongPanelOpen ? '음원 목록 접기' : '음원 목록 펼치기'}
+                    className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition"
+                  >
+                    {isSongPanelOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
+                </div>
 
-                {selectedSongIds.size > 0 && (
+                {isSongPanelOpen && selectedSongIds.size > 0 && (
                   <button
                     type="button"
                     disabled={isDeletingSelected}
@@ -942,121 +950,136 @@ export default function HarvestAdminPage() {
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
-                {filteredSongs.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => toggleSelectAll(filteredSongs)}
-                    className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-indigo-300 px-2 py-1 bg-slate-950 border border-slate-800 rounded-lg transition"
-                  >
-                    {isAllSelected ? <CheckSquare className="w-3.5 h-3.5 text-indigo-400" /> : <Square className="w-3.5 h-3.5" />}
-                    전체선택
-                  </button>
-                )}
+              {/* 펼쳐져 있을 때만 검색창 및 전체선택 노출 */}
+              {isSongPanelOpen && (
+                <div className="flex items-center gap-2">
+                  {filteredSongs.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => toggleSelectAll(filteredSongs)}
+                      className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-indigo-300 px-2 py-1 bg-slate-950 border border-slate-800 rounded-lg transition"
+                    >
+                      {isAllSelected ? <CheckSquare className="w-3.5 h-3.5 text-indigo-400" /> : <Square className="w-3.5 h-3.5" />}
+                      전체선택
+                    </button>
+                  )}
 
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={searchSongQuery}
-                    onChange={(e) => setSearchSongQuery(e.target.value)}
-                    placeholder="곡명 또는 밴드 검색..."
-                    className="bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full sm:w-48"
-                  />
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={searchSongQuery}
+                      onChange={(e) => setSearchSongQuery(e.target.value)}
+                      placeholder="곡명 또는 밴드 검색..."
+                      className="bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full sm:w-48"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
-            {loading ? (
-              <div className="p-12 text-center text-slate-500 text-xs">음원 데이터 로드 중...</div>
-            ) : filteredSongs.length === 0 ? (
-              <div className="p-12 text-center text-slate-500 text-xs">조건에 맞는 음원이 없습니다.</div>
+            {/* 수집 음원 본체 (isSongPanelOpen === true 일 때만 렌더링) */}
+            {isSongPanelOpen ? (
+              loading ? (
+                <div className="p-12 text-center text-slate-500 text-xs">음원 데이터 로드 중...</div>
+              ) : filteredSongs.length === 0 ? (
+                <div className="p-12 text-center text-slate-500 text-xs">조건에 맞는 음원이 없습니다.</div>
+              ) : (
+                <div className="space-y-2 max-h-[580px] overflow-y-auto pr-1">
+                  {filteredSongs.map((song) => {
+                    const isChecked = selectedSongIds.has(song.id);
+                    const youtubeTargetUrl = song.youtube_url || `https://www.youtube.com/results?search_query=${encodeURIComponent(`${song.artist} ${song.title}`)}`;
+
+                    return (
+                      <div
+                        key={song.id}
+                        onClick={() => toggleSongSelection(song.id)}
+                        className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs cursor-pointer transition ${
+                          isChecked 
+                            ? 'bg-indigo-950/40 border-indigo-600/80' 
+                            : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div 
+                            className="shrink-0 text-slate-400" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleSongSelection(song.id);
+                            }}
+                          >
+                            {isChecked ? (
+                              <CheckSquare className="w-4 h-4 text-indigo-400" />
+                            ) : (
+                              <Square className="w-4 h-4 text-slate-600 hover:text-slate-400" />
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-slate-200 truncate">{song.title}</span>
+                              <span className="text-slate-400">({song.artist})</span>
+                            </div>
+
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">
+                              <span>{song.genre || '장르 미지정'}</span>
+                              <span>•</span>
+                              <span>{new Date(song.created_at).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                            song.bpm 
+                              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800' 
+                              : 'bg-slate-900 text-slate-500 border-slate-800'
+                          }`}>
+                            {song.bpm ? `${song.bpm} BPM` : 'BPM 대기'}
+                          </span>
+
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                            song.original_key 
+                              ? 'bg-purple-950/80 text-purple-300 border-purple-800' 
+                              : 'bg-slate-900 text-slate-500 border-slate-800'
+                          }`}>
+                            {song.original_key ? `${song.original_key} Key` : 'Key 미산출'}
+                          </span>
+
+                          <a
+                            href={youtubeTargetUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`YouTube에서 '${song.artist} - ${song.title}' 듣기/확인`}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-800/80 text-rose-300 hover:text-rose-100 text-[11px] font-semibold transition shadow-sm"
+                          >
+                            <Play className="w-3 h-3 fill-rose-300 text-rose-300" />
+                            <span>YouTube</span>
+                            <ExternalLink className="w-2.5 h-2.5 ml-0.5 opacity-70" />
+                          </a>
+
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteSong(e, song)}
+                            title={`'${song.title}' 곡 삭제`}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/50 border border-transparent hover:border-rose-900/60 transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
             ) : (
-              <div className="space-y-2 max-h-[580px] overflow-y-auto pr-1">
-                {filteredSongs.map((song) => {
-                  const isChecked = selectedSongIds.has(song.id);
-                  const youtubeTargetUrl = song.youtube_url || `https://www.youtube.com/results?search_query=${encodeURIComponent(`${song.artist} ${song.title}`)}`;
-
-                  return (
-                    <div
-                      key={song.id}
-                      onClick={() => toggleSongSelection(song.id)}
-                      className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs cursor-pointer transition ${
-                        isChecked 
-                          ? 'bg-indigo-950/40 border-indigo-600/80' 
-                          : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <div 
-                          className="shrink-0 text-slate-400" 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleSongSelection(song.id);
-                          }}
-                        >
-                          {isChecked ? (
-                            <CheckSquare className="w-4 h-4 text-indigo-400" />
-                          ) : (
-                            <Square className="w-4 h-4 text-slate-600 hover:text-slate-400" />
-                          )}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-slate-200 truncate">{song.title}</span>
-                            <span className="text-slate-400">({song.artist})</span>
-                          </div>
-
-                          <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">
-                            <span>{song.genre || '장르 미지정'}</span>
-                            <span>•</span>
-                            <span>{new Date(song.created_at).toLocaleDateString()}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                          song.bpm 
-                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800' 
-                            : 'bg-slate-900 text-slate-500 border-slate-800'
-                        }`}>
-                          {song.bpm ? `${song.bpm} BPM` : 'BPM 대기'}
-                        </span>
-
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                          song.original_key 
-                            ? 'bg-purple-950/80 text-purple-300 border-purple-800' 
-                            : 'bg-slate-900 text-slate-500 border-slate-800'
-                        }`}>
-                          {song.original_key ? `${song.original_key} Key` : 'Key 미산출'}
-                        </span>
-
-                        <a
-                          href={youtubeTargetUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title={`YouTube에서 '${song.artist} - ${song.title}' 듣기/확인`}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-800/80 text-rose-300 hover:text-rose-100 text-[11px] font-semibold transition shadow-sm"
-                        >
-                          <Play className="w-3 h-3 fill-rose-300 text-rose-300" />
-                          <span>YouTube</span>
-                          <ExternalLink className="w-2.5 h-2.5 ml-0.5 opacity-70" />
-                        </a>
-
-                        <button
-                          type="button"
-                          onClick={(e) => handleDeleteSong(e, song)}
-                          title={`'${song.title}' 곡 삭제`}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/50 border border-transparent hover:border-rose-900/60 transition"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+              /* 음원 목록이 접혔을 때 표시되는 축약 바 */
+              <div 
+                onClick={() => setIsSongPanelOpen(true)}
+                className="py-3 px-4 rounded-xl bg-slate-950/50 hover:bg-slate-900 border border-slate-800 text-center text-xs text-slate-400 cursor-pointer transition flex items-center justify-center gap-1.5"
+              >
+                <span>음원 목록이 접혀 있습니다. 클릭하여 펼치기 ({filteredSongs.length}곡)</span>
+                <ChevronDown className="w-4 h-4 text-purple-400" />
               </div>
             )}
           </div>
@@ -1064,7 +1087,7 @@ export default function HarvestAdminPage() {
 
       </div>
 
-      {/* 💡 [3~6단계] 제보받은 곡 관리 및 단일 우선 수집 모달 */}
+      {/* 제보받은 곡 관리 및 단일 우선 수집 모달 */}
       {isSuggestionsOpen && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
@@ -1095,7 +1118,6 @@ export default function HarvestAdminPage() {
                       key={suggestion.id}
                       className="p-4 bg-slate-950/80 border border-slate-800 rounded-xl space-y-3"
                     >
-                      {/* 3단계: 제보 정보 및 제보 밴드 뷰잉 */}
                       <div className="flex items-start justify-between gap-4">
                         <div>
                           <div className="flex items-center gap-2">
@@ -1123,7 +1145,6 @@ export default function HarvestAdminPage() {
                         )}
                       </div>
 
-                      {/* 5단계: 수집 결과 미리보기 */}
                       {preview && (
                         <div className="p-3 bg-indigo-950/30 border border-indigo-900/60 rounded-lg flex items-center justify-between text-[11px]">
                           <div>
@@ -1138,7 +1159,6 @@ export default function HarvestAdminPage() {
                         </div>
                       )}
 
-                      {/* 액션 버튼 */}
                       <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-900">
                         <button
                           type="button"
@@ -1148,7 +1168,6 @@ export default function HarvestAdminPage() {
                           반려
                         </button>
 
-                        {/* 4단계: 우선 수집 버튼 */}
                         {!preview ? (
                           <button
                             type="button"
@@ -1160,7 +1179,6 @@ export default function HarvestAdminPage() {
                             {isHarvesting ? '정보 수집 중...' : '해당 곡 우선 수집'}
                           </button>
                         ) : (
-                          /* 5 & 6단계: DB 최종 추가 및 밴드 동기화 */
                           <button
                             type="button"
                             onClick={() => handleConfirmAddSuggestion(suggestion)}
