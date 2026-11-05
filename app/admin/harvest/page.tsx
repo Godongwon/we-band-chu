@@ -546,19 +546,14 @@ export default function HarvestAdminPage() {
         
         {/* 상단 헤더 */}
         <header className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-slate-800 gap-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h1 className="text-2xl font-black bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-                WeBandChu Admin
-              </h1>
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
-                실시간 수집 모니터링
+           <div className="flex items-center gap-1.5">
+              <span className="text-xl font-black bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-400 bg-clip-text text-transparent">
+                We.Band.Chu
+              </span>
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
+                우밴추
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              밴드 맞춤형 음원 수집 및 오디오 파형 분석 관리자 패널
-            </p>
-          </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
             <button
