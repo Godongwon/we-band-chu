@@ -8,7 +8,14 @@ import {
   Plus, 
   AlertCircle, 
   Search, 
-  LogOut 
+  LogOut,
+  X,
+  Play,
+  FileText,
+  Guitar,
+  CheckCircle2,
+  Sliders,
+  ExternalLink
 } from 'lucide-react';
 
 interface SongItem {
@@ -19,14 +26,14 @@ interface SongItem {
   bpm: number;
   original_key: string;
   recommended_key: string;
-  has_live_performance: boolean;
+  has_live_performance?: boolean;
   has_instrument_cover?: boolean;
   youtube_url?: string;
   reason?: string;
 }
 
 export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
-  // 밴드 프로필 상태 (currentBand 동적 동기화)
+  // 밴드 프로필 상태
   const [bandProfile, setBandProfile] = useState({
     name: currentBand?.name || '루시드 밴드',
     vocal_gender: currentBand?.vocal_gender || 'FEMALE',
@@ -50,6 +57,9 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
   const [repertoire, setRepertoire] = useState<SongItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // 💡 선택된 곡 상세 팝업 모달 State
+  const [selectedSong, setSelectedSong] = useState<SongItem | null>(null);
 
   // 추천곡 API 호출
   async function fetchRecommendations(tabKey: string = activeTab) {
@@ -80,10 +90,10 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     fetchRecommendations(activeTab);
   }, [activeTab]);
 
-  // 신고 버튼(!) 클릭 핸들러 (Supabase song_reports로 전송)
+  // 신고 버튼 핸들러
   async function handleReportSong(song: SongItem) {
     const reason = prompt(
-      `'${song.title} (${song.artist})' 곡을 신고하시겠습니까?\n사유를 입력해 주세요 (예: 비밴드 곡, 보컬 성별 오류, 음원 오류):`,
+      `'${song.title} (${song.artist})' 곡을 신고하시겠습니까?\n사유를 입력해 주세요:`,
       '비밴드 곡 또는 잘못된 음원 정보'
     );
 
@@ -112,11 +122,13 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
       alert(`신고 통신 에러: ${err.message}`);
     }
 
-    // 화면 추천 목록에서 즉시 제거
+    if (selectedSong?.title === song.title) {
+      setSelectedSong(null);
+    }
     setRecommendedSongs((prev) => prev.filter((s) => s.title !== song.title));
   }
 
-  // 레퍼토리 추가
+  // 레퍼토리 담기
   function handleAddToRepertoire(song: SongItem) {
     if (repertoire.some((r) => r.title === song.title)) {
       alert('이미 레퍼토리에 담긴 곡입니다.');
@@ -124,13 +136,16 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     }
     setRepertoire((prev) => [...prev, song]);
     setRecommendedSongs((prev) => prev.filter((s) => s.title !== song.title));
+    if (selectedSong?.title === song.title) {
+      setSelectedSong(null);
+    }
   }
 
   return (
     <main className="min-h-screen bg-[#070913] text-slate-100 p-4 sm:p-6 font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* 헤더 */}
+        {/* 상단 헤더 */}
         <header className="flex items-center justify-between pb-4 border-b border-slate-900">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5">
@@ -192,11 +207,16 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
             ) : (
               <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
                 {repertoire.map((song, idx) => (
-                  <div key={idx} className="p-3 bg-[#0d1021] border border-slate-800 rounded-xl flex items-center justify-between text-xs">
+                  <div 
+                    key={idx} 
+                    onClick={() => setSelectedSong(song)}
+                    className="p-3 bg-[#0d1021] hover:bg-[#12162e] border border-slate-800 rounded-xl flex items-center justify-between text-xs cursor-pointer transition"
+                  >
                     <div>
                       <span className="font-bold text-slate-200 block">{song.title}</span>
                       <span className="text-[11px] text-slate-400">{song.artist} • {song.bpm}bpm</span>
                     </div>
+                    <span className="text-[10px] text-indigo-400 font-semibold">상세보기</span>
                   </div>
                 ))}
               </div>
@@ -290,12 +310,15 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
                 {recommendedSongs.map((song, idx) => (
                   <div
                     key={idx}
-                    className="p-3.5 bg-[#0d1021]/80 hover:bg-[#111429] border border-slate-800/80 hover:border-slate-700/80 rounded-2xl flex items-center justify-between gap-3 text-xs transition shadow-sm"
+                    onClick={() => setSelectedSong(song)}
+                    className="p-3.5 bg-[#0d1021]/80 hover:bg-[#111429] border border-slate-800/80 hover:border-slate-700/80 rounded-2xl flex items-center justify-between gap-3 text-xs transition shadow-sm cursor-pointer group"
                   >
                     {/* 곡 정보 */}
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-slate-100 text-sm truncate">{song.title}</span>
+                        <span className="font-bold text-slate-100 text-sm truncate group-hover:text-indigo-300 transition">
+                          {song.title}
+                        </span>
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-800/60">
                           {song.genre || '록/밴드'}
                         </span>
@@ -309,30 +332,31 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
                         <span>{song.bpm}bpm</span>
                       </div>
 
-                     <div className="flex items-center gap-3 pt-1 text-[11px]">
-  <a
-    href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${song.artist} ${song.title} 커버`)}`}
-    target="_blank"
-    rel="noopener noreferrer"
-    onClick={(e) => e.stopPropagation()}
-    className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
-  >
-    🎯 커버 영상
-  </a>
-  <a
-    href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${song.artist} ${song.title} 라이브`)}`}
-    target="_blank"
-    rel="noopener noreferrer"
-    onClick={(e) => e.stopPropagation()}
-    className="text-slate-400 hover:text-slate-200 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
-  >
-    📺 라이브 무대
-  </a>
-</div>
+                      {/* 커버 영상 & 라이브 무대 바로가기 */}
+                      <div className="flex items-center gap-3 pt-1 text-[11px]">
+                        <a
+                          href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${song.artist} ${song.title} 커버`)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
+                        >
+                          🎯 커버 영상
+                        </a>
+                        <a
+                          href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${song.artist} ${song.title} 라이브`)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-slate-400 hover:text-slate-200 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
+                        >
+                          📺 라이브 무대
+                        </a>
+                      </div>
                     </div>
 
-                    {/* 액션 버튼 (+ 담기 / ! 신고) */}
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    {/* 액션 버튼 */}
+                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         onClick={() => handleAddToRepertoire(song)}
@@ -358,6 +382,189 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
         </div>
 
       </div>
+
+      {/* 💡 [신규 추가] 곡 상세 정보 & 파트별 악보/세션 모달 팝업 */}
+      {selectedSong && (
+        <div 
+          className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setSelectedSong(null)}
+        >
+          <div 
+            className="bg-[#0e1227] border border-slate-800 rounded-3xl w-full max-w-xl p-6 shadow-2xl space-y-5 text-xs text-slate-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 팝업 헤더 */}
+            <div className="flex items-start justify-between border-b border-slate-800/80 pb-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-800/70">
+                    {selectedSong.genre || '밴드/록'}
+                  </span>
+                  <span className="text-slate-400 text-xs">{selectedSong.artist}</span>
+                </div>
+                <h3 className="text-lg font-black text-slate-100 flex items-center gap-2">
+                  {selectedSong.title}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedSong(null)}
+                className="text-slate-400 hover:text-slate-100 p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* 기본 스펙 요약 카드 (BPM / Key / 보컬 매칭) */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-[#121633] border border-slate-800/80 p-3 rounded-2xl text-center">
+                <span className="text-[10px] text-slate-400 block mb-0.5">템포 (BPM)</span>
+                <span className="text-base font-black text-emerald-400">{selectedSong.bpm}</span>
+              </div>
+              <div className="bg-[#121633] border border-slate-800/80 p-3 rounded-2xl text-center">
+                <span className="text-[10px] text-slate-400 block mb-0.5">원곡 Key / 추천 Key</span>
+                <span className="text-xs font-bold text-purple-300 block mt-1">
+                  {selectedSong.recommended_key || selectedSong.original_key || '원키'}
+                </span>
+              </div>
+              <div className="bg-[#121633] border border-slate-800/80 p-3 rounded-2xl text-center">
+                <span className="text-[10px] text-slate-400 block mb-0.5">보컬 음역대</span>
+                <span className="text-xs font-bold text-pink-300 block mt-1">
+                  {bandProfile.vocal_gender === 'FEMALE' ? '여성 보컬 최적화' : '남성 보컬 최적화'}
+                </span>
+              </div>
+            </div>
+
+            {/* 파트별 악보 및 세션 체크리스트 */}
+            <div className="space-y-2.5">
+              <h4 className="font-bold text-slate-300 text-xs flex items-center gap-1.5">
+                <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                파트별 합주 세션 및 악보 안내
+              </h4>
+
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                {/* 일렉기타 */}
+                <div className="p-3 bg-[#090c1d] border border-slate-800/80 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Guitar className="w-4 h-4 text-amber-400" />
+                    <div>
+                      <span className="font-bold text-slate-200 block">일렉기타</span>
+                      <span className="text-[10px] text-slate-500">
+                        {bandProfile.guitar_count === 1 ? '1기타 편곡 가능' : '2기타 리드/리듬 분할'}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-0.5">
+                    <CheckCircle2 className="w-3 h-3" /> TAB 있음
+                  </span>
+                </div>
+
+                {/* 베이스 */}
+                <div className="p-3 bg-[#090c1d] border border-slate-800/80 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Music className="w-4 h-4 text-cyan-400" />
+                    <div>
+                      <span className="font-bold text-slate-200 block">베이스</span>
+                      <span className="text-[10px] text-slate-500">4현 표준 튜닝 대응</span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-0.5">
+                    <CheckCircle2 className="w-3 h-3" /> 악보 보유
+                  </span>
+                </div>
+
+                {/* 드럼 */}
+                <div className="p-3 bg-[#090c1d] border border-slate-800/80 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-purple-400" />
+                    <div>
+                      <span className="font-bold text-slate-200 block">드럼</span>
+                      <span className="text-[10px] text-slate-500">{selectedSong.bpm}bpm 리듬 비트</span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-0.5">
+                    <CheckCircle2 className="w-3 h-3" /> 드럼보 확보
+                  </span>
+                </div>
+
+                {/* 건반 / 신디 */}
+                <div className="p-3 bg-[#090c1d] border border-slate-800/80 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Music className="w-4 h-4 text-pink-400" />
+                    <div>
+                      <span className="font-bold text-slate-200 block">키보드/건반</span>
+                      <span className="text-[10px] text-slate-500">
+                        {bandProfile.has_keys ? '메인 신디 및 피아노 지원' : '기타로 대체 가능'}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-indigo-300 font-semibold">
+                    {bandProfile.has_keys ? '세션 권장' : '생략 가능'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 외부 악보 및 영상 링크 바로가기 */}
+            <div className="p-3.5 bg-[#090c1d] border border-slate-800/80 rounded-2xl flex items-center justify-between gap-2">
+              <span className="text-[11px] text-slate-400">유튜브 커버 및 라이브:</span>
+              <div className="flex items-center gap-2">
+                <a
+                  href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${selectedSong.title} 악보 cover`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] font-semibold transition"
+                >
+                  <FileText className="w-3 h-3" />
+                  악보 영상
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </a>
+                <a
+                  href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${selectedSong.title}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-950/80 hover:bg-rose-900 border border-rose-800/60 text-rose-300 text-[11px] font-semibold transition"
+                >
+                  <Play className="w-3 h-3 fill-rose-300" />
+                  원곡 듣기
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </a>
+              </div>
+            </div>
+
+            {/* 모달 하단 버튼 액션 */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+              <button
+                type="button"
+                onClick={() => handleReportSong(selectedSong)}
+                className="text-rose-400 hover:text-rose-300 text-xs flex items-center gap-1"
+              >
+                <AlertCircle className="w-3.5 h-3.5" /> 곡 오류 신고
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSong(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
+                >
+                  닫기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAddToRepertoire(selectedSong)}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition shadow"
+                >
+                  <Plus className="w-4 h-4" />
+                  레퍼토리에 담기
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }
