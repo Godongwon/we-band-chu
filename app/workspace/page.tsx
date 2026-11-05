@@ -83,7 +83,11 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
   const [recommendedSongs, setRecommendedSongs] = useState<SongItem[]>([]);
   const [repertoire, setRepertoire] = useState<SongItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
+
+  // 💡 검색 상태 관리
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchResults, setSearchResults] = useState<SongItem[]>([]);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
 
   const [selectedSong, setSelectedSong] = useState<SongItem | null>(null);
 
@@ -125,6 +129,46 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     }
   }, [activeTab, isAuthChecking]);
 
+  // 💡 [신규] 검색어 입력 시 전체 DB 실시간 검색 디바운스 적용
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    const delayTimer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/songs?limit=50`);
+        const data = await res.json();
+        if (res.ok && data.songs) {
+          const q = trimmed.toLowerCase();
+          const matched = data.songs
+            .filter((s: any) => s.title?.toLowerCase().includes(q) || s.artist?.toLowerCase().includes(q))
+            .map((s: any) => ({
+              id: s.id,
+              title: s.title,
+              artist: s.artist,
+              genre: s.genre || 'Rock/Band',
+              bpm: s.bpm || 120,
+              original_key: s.original_key || '원키 유지',
+              recommended_key: s.original_key || '원키 유지',
+              youtube_url: s.youtube_url,
+            }));
+          setSearchResults(matched);
+        }
+      } catch (err) {
+        console.error('[검색 오류]:', err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(delayTimer);
+  }, [searchQuery]);
+
   // 로그아웃 핸들러
   function handleLogout() {
     if (confirm(`'${bandProfile.name}' 워크스페이스에서 로그아웃하시겠습니까?`)) {
@@ -142,7 +186,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     setIsEditProfileOpen(true);
   }
 
-  // 💡 [DB 연동 적용] 실제 Supabase DB 반영 및 로컬 상태/추천곡 동기화
+  // DB 연동 적용
   async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault();
     if (!editName.trim()) {
@@ -160,7 +204,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     setIsSavingProfile(true);
 
     try {
-      // 1. Supabase bands 테이블에 저장 API 호출
       const res = await fetch('/api/band/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -172,12 +215,10 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
         throw new Error(data.message || 'DB 업데이트 중 오류가 발생했습니다.');
       }
 
-      // 2. React State 및 LocalStorage 갱신
       setBandProfile(updatedProfile);
       localStorage.setItem('current_band', JSON.stringify(updatedProfile));
       setIsEditProfileOpen(false);
 
-      // 3. 변경된 밴드 구성(보컬 음역, 악기 세션)을 반영하여 추천곡 즉시 재호출
       fetchRecommendations(activeTab, updatedProfile);
       alert('밴드 구성이 DB에 정상적으로 반영되었습니다!');
     } catch (err: any) {
@@ -280,6 +321,10 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     );
   }
 
+  // 검색창 입력 시 표시할 곡 목록 결정
+  const isSearchActive = searchQuery.trim().length > 0;
+  const displaySongs = isSearchActive ? searchResults : recommendedSongs;
+
   return (
     <main className="min-h-screen bg-[#070913] text-slate-100 p-4 sm:p-6 font-sans">
       <div className="max-w-7xl mx-auto space-y-4">
@@ -351,9 +396,18 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="곡명 또는 아티스트 입력 시 정식 음원이 실시간 검색됩니다 (예: 윤하, QWER, DAY6, 실리카겔...)"
-            className="w-full bg-[#0d1021] border border-slate-800/80 rounded-2xl pl-11 pr-4 py-3 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-600 transition shadow-inner"
+            placeholder="곡명 또는 아티스트 입력 시 정식 음원이 실시간 검색됩니다 (예: 한로로, 윤하, QWER, DAY6, 실리카겔...)"
+            className="w-full bg-[#0d1021] border border-slate-800/80 rounded-2xl pl-11 pr-10 py-3 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-600 transition shadow-inner"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* 2열 메인 컨텐츠 */}
@@ -391,92 +445,106 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
             )}
           </div>
 
-          {/* 우측: 맞춤 합주 추천 10곡 */}
+          {/* 우측: 맞춤 합주 추천 또는 실시간 검색 결과 피드 */}
           <div className="bg-[#0b0e1e]/60 border border-slate-800/60 rounded-2xl p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold flex items-center gap-2 text-slate-200">
-                <Sparkles className="w-4 h-4 text-purple-400" />
-                맞춤 합주 추천 10곡
+                {isSearchActive ? (
+                  <>
+                    <Search className="w-4 h-4 text-indigo-400" />
+                    검색 결과 ({displaySongs.length}곡)
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 text-purple-400" />
+                    맞춤 합주 추천 10곡
+                  </>
+                )}
               </h2>
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => fetchRecommendations()}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-800/80 text-[11px] font-bold text-indigo-300 transition shadow"
-              >
-                <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-                새로고침
-              </button>
+              {!isSearchActive && (
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => fetchRecommendations()}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-800/80 text-[11px] font-bold text-indigo-300 transition shadow"
+                >
+                  <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+                  새로고침
+                </button>
+              )}
             </div>
 
-            {/* 필터 탭 바 */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-              <button
-                onClick={() => setActiveTab('ALL')}
-                className={`px-3 py-1 rounded-full border transition shrink-0 ${
-                  activeTab === 'ALL'
-                    ? 'bg-indigo-600 text-white border-indigo-500'
-                    : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                전체
-              </button>
-              <button
-                onClick={() => setActiveTab('REPERTOIRE')}
-                className={`flex items-center gap-1 px-3 py-1 rounded-full border transition shrink-0 ${
-                  activeTab === 'REPERTOIRE'
-                    ? 'bg-indigo-600 text-white border-indigo-500'
-                    : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                🎸 레퍼토리 유사
-              </button>
-              <button
-                onClick={() => setActiveTab('HIGH_TENSION')}
-                className={`flex items-center gap-1 px-3 py-1 rounded-full border transition shrink-0 ${
-                  activeTab === 'HIGH_TENSION'
-                    ? 'bg-indigo-600 text-white border-indigo-500'
-                    : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                🔥 텐션
-              </button>
-              <button
-                onClick={() => setActiveTab('PLAYING_FEEL')}
-                className={`flex items-center gap-1 px-3 py-1 rounded-full border transition shrink-0 ${
-                  activeTab === 'PLAYING_FEEL'
-                    ? 'bg-indigo-600 text-white border-indigo-500'
-                    : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                🎛️ 손맛
-              </button>
-              <button
-                onClick={() => setActiveTab('EMOTIONAL')}
-                className={`flex items-center gap-1 px-3 py-1 rounded-full border transition shrink-0 ${
-                  activeTab === 'EMOTIONAL'
-                    ? 'bg-indigo-600 text-white border-indigo-500'
-                    : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                🌙 감성
-              </button>
-            </div>
+            {/* 필터 탭 바 (검색 중이 아닐 때만 노출) */}
+            {!isSearchActive && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+                <button
+                  onClick={() => setActiveTab('ALL')}
+                  className={`px-3 py-1 rounded-full border transition shrink-0 ${
+                    activeTab === 'ALL'
+                      ? 'bg-indigo-600 text-white border-indigo-500'
+                      : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  전체
+                </button>
+                <button
+                  onClick={() => setActiveTab('REPERTOIRE')}
+                  className={`flex items-center gap-1 px-3 py-1 rounded-full border transition shrink-0 ${
+                    activeTab === 'REPERTOIRE'
+                      ? 'bg-indigo-600 text-white border-indigo-500'
+                      : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  🎸 레퍼토리 유사
+                </button>
+                <button
+                  onClick={() => setActiveTab('HIGH_TENSION')}
+                  className={`flex items-center gap-1 px-3 py-1 rounded-full border transition shrink-0 ${
+                    activeTab === 'HIGH_TENSION'
+                      ? 'bg-indigo-600 text-white border-indigo-500'
+                      : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  🔥 텐션
+                </button>
+                <button
+                  onClick={() => setActiveTab('PLAYING_FEEL')}
+                  className={`flex items-center gap-1 px-3 py-1 rounded-full border transition shrink-0 ${
+                    activeTab === 'PLAYING_FEEL'
+                      ? 'bg-indigo-600 text-white border-indigo-500'
+                      : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  🎛️ 손맛
+                </button>
+                <button
+                  onClick={() => setActiveTab('EMOTIONAL')}
+                  className={`flex items-center gap-1 px-3 py-1 rounded-full border transition shrink-0 ${
+                    activeTab === 'EMOTIONAL'
+                      ? 'bg-indigo-600 text-white border-indigo-500'
+                      : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  🌙 감성
+                </button>
+              </div>
+            )}
 
-            {loading ? (
+            {/* 목록 영역 */}
+            {loading || isSearching ? (
               <div className="p-16 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
                 <RefreshCw className="w-5 h-5 animate-spin text-indigo-400" />
-                밴드 구성 맞춤 합주곡 탐색 중...
+                {isSearching ? '음원 DB 실시간 검색 중...' : '밴드 구성 맞춤 합주곡 탐색 중...'}
               </div>
-            ) : recommendedSongs.length === 0 ? (
+            ) : displaySongs.length === 0 ? (
               <div className="p-16 text-center text-xs text-slate-500">
-                추천 가능한 곡이 없습니다. 새로고침을 눌러보세요.
+                {isSearchActive ? '일치하는 곡이 없습니다. 상단에서 직접 곡을 제보해 보세요!' : '추천 가능한 곡이 없습니다. 새로고침을 눌러보세요.'}
               </div>
             ) : (
               <div className="space-y-2.5 max-h-[580px] overflow-y-auto pr-1">
-                {recommendedSongs.map((song, idx) => (
+                {displaySongs.map((song, idx) => (
                   <div
-                    key={idx}
+                    key={song.id || idx}
                     onClick={() => setSelectedSong(song)}
                     className="p-3.5 bg-[#0d1021]/80 hover:bg-[#111429] border border-slate-800/80 hover:border-slate-700/80 rounded-2xl flex items-center justify-between gap-3 text-xs transition shadow-sm cursor-pointer group"
                   >
@@ -547,7 +615,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
 
       </div>
 
-      {/* 밴드 구성 수정 모달 (DB 저장 연동) */}
+      {/* 밴드 구성 수정 모달 */}
       {isEditProfileOpen && (
         <div 
           className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
@@ -756,7 +824,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
                   required
                   value={suggestArtist}
                   onChange={(e) => setSuggestArtist(e.target.value)}
-                  placeholder="예: 윤하, QWER, DAY6, 실리카겔"
+                  placeholder="예: 한로로, 윤하, QWER, DAY6, 실리카겔"
                   className="w-full bg-[#080a17] border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
                 />
               </div>
