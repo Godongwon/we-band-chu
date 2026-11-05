@@ -1,175 +1,500 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { 
-  Database, 
-  Sparkles, 
   RefreshCw, 
-  Play, 
-  Trash2, 
-  Plus, 
-  AlertCircle, 
-  CheckCircle2, 
-  Clock, 
-  Layers, 
+  Music2, 
+  Radio, 
+  Lock, 
+  Sparkles, 
   Search, 
+  ExternalLink, 
+  Plus, 
   X, 
-  ExternalLink,
+  Clock, 
+  Trash2, 
+  ShieldAlert,
+  CheckSquare,
+  Square,
+  AlertTriangle,
+  Check,
+  Timer,
+  ChevronLeft,
   ChevronRight,
-  Music2,
-  Radio,
-  BarChart3,
-  Check
+  ChevronDown,
+  ChevronUp,
+  Play,
+  Inbox
 } from 'lucide-react';
 
 interface TargetArtist {
   id: string;
   name: string;
-  search_alias?: string;
-  vocal_gender?: string;
+  search_alias: string | null;
   priority: number;
   is_active: boolean;
-  last_harvested_at?: string;
-  song_count?: number;
+  last_harvested_at: string | null;
 }
 
-interface SongSuggestion {
+interface SongItem {
   id: string;
   title: string;
   artist: string;
-  band_name?: string;
-  youtube_url?: string;
-  status: 'PENDING' | 'HARVESTED' | 'REJECTED';
+  genre: string | null;
+  bpm: number | null;
+  original_key: string | null;
+  youtube_url: string | null;
   created_at: string;
 }
 
-interface SongReport {
-  id: string;
-  song_id?: string;
+interface ReportedSong {
+  report_id: string;
+  song_id: string;
   title: string;
   artist: string;
   reason: string;
   created_at: string;
+  youtube_url: string | null;
+  genre: string;
+  bpm: number | null;
+  original_key: string | null;
 }
 
-export default function AdminHarvestPage() {
+interface SuggestionSong {
+  id: string;
+  title: string;
+  artist: string;
+  band_name: string;
+  youtube_url: string | null;
+  created_at: string;
+}
+
+const REFRESH_INTERVAL_SECONDS = 300;
+
+export default function HarvestAdminPage() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [password, setPassword] = useState<string>('');
+  const [authError, setAuthError] = useState<string>('');
+
   const [artists, setArtists] = useState<TargetArtist[]>([]);
-  const [suggestions, setSuggestions] = useState<SongSuggestion[]>([]);
-  const [reports, setReports] = useState<SongReport[]>([]);
-  
-  const [loading, setLoading] = useState<boolean>(true);
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [songs, setSongs] = useState<SongItem[]>([]);
+  const [reports, setReports] = useState<ReportedSong[]>([]);
+  const [isReportsOpen, setIsReportsOpen] = useState<boolean>(false);
+
+  const [suggestions, setSuggestions] = useState<SuggestionSong[]>([]);
+  const [isSuggestionsOpen, setIsSuggestionsOpen] = useState<boolean>(false);
+  const [harvestingSuggestionId, setHarvestingSuggestionId] = useState<string | null>(null);
+  const [previewHarvestData, setPreviewHarvestData] = useState<{ [id: string]: any }>({});
+
+  const [isArtistPanelOpen, setIsArtistPanelOpen] = useState<boolean>(false);
+  const [isSongPanelOpen, setIsSongPanelOpen] = useState<boolean>(true);
+
+  const [loading, setLoading] = useState<boolean>(false);
+  const [triggering, setTriggering] = useState<boolean>(false);
+  const [isCleaning, setIsCleaning] = useState<boolean>(false);
+  const [isDeletingSelected, setIsDeletingSelected] = useState<boolean>(false);
+  const [lastMessage, setLastMessage] = useState<string>('');
+
+  const [selectedArtist, setSelectedArtist] = useState<string>('ALL');
+  const [searchSongQuery, setSearchSongQuery] = useState<string>('');
   const [isBackfilling, setIsBackfilling] = useState<boolean>(false);
-  const [refreshingId, setRefreshingId] = useState<string | null>(null);
 
-  // 상단 통계 수치
-  const [totalSongsCount, setTotalSongsCount] = useState<number>(0);
-  const [analyzedSongsCount, setAnalyzedSongsCount] = useState<number>(0);
-  const [lastSyncInfo, setLastSyncInfo] = useState<{ artist: string; count: number; time: string } | null>(null);
-  const [countdown, setCountdown] = useState<number>(180); // 3분 타이머
+  const [selectedSongIds, setSelectedSongIds] = useState<Set<string>>(new Set());
 
-  // 밴드 신규 등록 State
+  const [isAddArtistOpen, setIsAddArtistOpen] = useState<boolean>(false);
   const [newArtistName, setNewArtistName] = useState<string>('');
   const [newArtistPriority, setNewArtistPriority] = useState<number>(1);
-  const [isAddingArtist, setIsAddingArtist] = useState<boolean>(false);
+  const [addingArtist, setAddingArtist] = useState<boolean>(false);
 
-  // 제보 및 신고 모달 State
-  const [isSuggestModalOpen, setIsSuggestModalOpen] = useState<boolean>(false);
-  const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
+  const [countdown, setCountdown] = useState<number>(REFRESH_INTERVAL_SECONDS);
+  const [isAutoRefreshing, setIsAutoRefreshing] = useState<boolean>(false);
 
-  // 제보 우선 수집 액션 State
-  const [previewSong, setPreviewSong] = useState<any>(null);
-  const [selectedSuggestion, setSelectedSuggestion] = useState<SongSuggestion | null>(null);
-  const [isFetchingSingle, setIsFetchingSingle] = useState<boolean>(false);
-  const [isConfirmingSingle, setIsConfirmingSingle] = useState<boolean>(false);
+  const stats = useMemo(() => {
+    const totalSongs = songs.length;
+    const totalArtists = artists.length;
+    const activeArtists = artists.filter((a) => a.is_active !== false).length;
+    
+    const analyzedBpmCount = songs.filter((s) => s.bpm !== null && s.bpm !== undefined && s.bpm > 0).length;
+    const analyzedKeyCount = songs.filter((s) => s.original_key !== null && s.original_key !== undefined && s.original_key.trim() !== '').length;
 
-  // 데이터 로드
-  async function loadAllData() {
-    setLoading(true);
+    const bpmRate = totalSongs > 0 ? Math.round((analyzedBpmCount / totalSongs) * 100) : 0;
+    const keyRate = totalSongs > 0 ? Math.round((analyzedKeyCount / totalSongs) * 100) : 0;
+
+    const harvested = artists
+      .filter((a) => a.last_harvested_at)
+      .sort((a, b) => new Date(b.last_harvested_at!).getTime() - new Date(a.last_harvested_at!).getTime());
+
+    let lastExecution = null;
+    if (harvested.length > 0) {
+      const latest = harvested[0];
+      lastExecution = {
+        artist: latest.name,
+        count: songs.filter((s) => s.artist === latest.name).length,
+        time: latest.last_harvested_at!,
+      };
+    } else if (songs.length > 0 && songs[0].created_at) {
+      lastExecution = {
+        artist: songs[0].artist,
+        count: songs.filter((s) => s.artist === songs[0].artist).length,
+        time: songs[0].created_at,
+      };
+    }
+
+    return {
+      totalSongs,
+      totalArtists,
+      activeArtists,
+      analyzedBpmCount,
+      analyzedKeyCount,
+      bpmRate,
+      keyRate,
+      lastExecution,
+    };
+  }, [songs, artists]);
+
+  useEffect(() => {
+    const savedAuth = sessionStorage.getItem('admin_authenticated');
+    if (savedAuth === 'true') {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const refreshAllData = async () => {
+    setIsAutoRefreshing(true);
     try {
-      const [resArtists, resSuggestions, resReports, resSongs] = await Promise.all([
-        fetch('/api/artists'),
-        fetch('/api/songs/suggest'),
-        fetch('/api/songs/report'),
-        fetch('/api/recommend', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ category: 'ALL' }),
-        }).catch(() => null),
-      ]);
+      await Promise.all([fetchArtists(), fetchSongs(), fetchReports(), fetchSuggestions()]);
+    } catch (e) {
+      console.error('[자동 갱신 오류]:', e);
+    } finally {
+      setIsAutoRefreshing(false);
+    }
+  };
 
-      const [dataArtists, dataSuggestions, dataReports] = await Promise.all([
-        resArtists.json(),
-        resSuggestions.json(),
-        resReports.json(),
-      ]);
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    refreshAllData();
+  }, [isAuthenticated]);
 
-      if (dataArtists.success) setArtists(dataArtists.artists || []);
-      if (dataSuggestions.success) setSuggestions(dataSuggestions.suggestions || []);
-      if (dataReports.success) setReports(dataReports.reports || []);
+  useEffect(() => {
+    if (!isAuthenticated) return;
 
-      // 전체 곡 카운트
-      if (resSongs && resSongs.ok) {
-        const sData = await resSongs.json();
-        if (sData.recommendations) {
-          setTotalSongsCount(sData.recommendations.length * 5 || 48); // 추정 집계
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          refreshAllData();
+          return REFRESH_INTERVAL_SECONDS;
         }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isAuthenticated]);
+
+  function handleManualRefreshNow() {
+    setCountdown(REFRESH_INTERVAL_SECONDS);
+    refreshAllData();
+  }
+
+  function formatCountdown(seconds: number) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  async function handleVerify(e: React.FormEvent) {
+    e.preventDefault();
+    setAuthError('');
+
+    try {
+      const res = await fetch('/api/admin/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setIsAuthenticated(true);
+        sessionStorage.setItem('admin_authenticated', 'true');
+      } else {
+        setAuthError(data.message || '인증에 실패했습니다.');
       }
     } catch (err: any) {
-      console.error('[관리자 데이터 로드 실패]:', err);
+      setAuthError(`통신 에러: ${err.message}`);
+    }
+  }
+
+  async function fetchArtists() {
+    try {
+      const res = await fetch('/api/artists');
+      const data = await res.json();
+      if (res.ok && data.artists) {
+        setArtists(data.artists);
+      }
+    } catch (err: any) {
+      console.error('[관리자] 아티스트 목록 로드 에러:', err.message);
+    }
+  }
+
+  async function fetchSongs() {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/songs?limit=5000');
+      const data = await res.json();
+      if (res.ok && data.songs) {
+        setSongs(data.songs);
+      }
+    } catch (err: any) {
+      console.error('[관리자] 곡 목록 로드 실패:', err.message);
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    loadAllData();
-  }, []);
-
-  // 3분 주기 자동 수집 카운트다운 타이머[cite: 7]
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCountdown((prev) => (prev > 0 ? prev - 1 : 180));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // LLM 정보 갱신 (search_alias, vocal_gender)
-  async function handleRefreshWithLLM(artist: TargetArtist) {
-    if (!confirm(`'${artist.name}' 밴드의 검색 키워드(search_alias)와 보컬 성별을 LLM으로 다시 분석할까요?`)) {
-      return;
-    }
-
-    setRefreshingId(artist.id);
+  async function fetchReports() {
     try {
-      const res = await fetch('/api/artists/refresh-llm', {
+      const res = await fetch('/api/admin/reports');
+      const data = await res.json();
+      if (res.ok && data.reports) {
+        setReports(data.reports);
+      }
+    } catch (err: any) {
+      console.error('[관리자] 신고 목록 로드 실패:', err.message);
+    }
+  }
+
+  async function fetchSuggestions() {
+    try {
+      const res = await fetch('/api/songs/suggest');
+      const data = await res.json();
+      if (res.ok && data.suggestions) {
+        setSuggestions(data.suggestions);
+      }
+    } catch (err: any) {
+      console.error('[관리자] 제보 목록 로드 실패:', err.message);
+    }
+  }
+
+  async function handleHarvestSingleSuggestion(suggestion: SuggestionSong) {
+    setHarvestingSuggestionId(suggestion.id);
+    try {
+      const res = await fetch('/api/songs/suggest/harvest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: artist.id, name: artist.name }),
+        body: JSON.stringify({
+          action: 'FETCH',
+          title: suggestion.title,
+          artist: suggestion.artist,
+          user_youtube_url: suggestion.youtube_url,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.previewSong) {
+        setPreviewHarvestData((prev) => ({ ...prev, [suggestion.id]: data.previewSong }));
+      } else {
+        alert(`수집 오류: ${data.message || '데이터를 가져오지 못했습니다.'}`);
+      }
+    } catch (err: any) {
+      alert(`수집 통신 실패: ${err.message}`);
+    } finally {
+      setHarvestingSuggestionId(null);
+    }
+  }
+
+  async function handleConfirmAddSuggestion(suggestion: SuggestionSong) {
+    const songData = previewHarvestData[suggestion.id];
+    if (!songData) return;
+
+    try {
+      const res = await fetch('/api/songs/suggest/harvest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CONFIRM',
+          suggestion_id: suggestion.id,
+          song_data: songData,
+        }),
       });
 
       const data = await res.json();
       if (res.ok && data.success) {
-        alert(data.message);
-        setArtists((prev) =>
-          prev.map((a) => (a.id === artist.id ? { ...a, ...data.artist } : a))
-        );
+        setLastMessage(data.message);
+        setSuggestions((prev) => prev.filter((s) => s.id !== suggestion.id));
+        await fetchArtists();
+        await fetchSongs();
       } else {
-        alert(`갱신 실패: ${data.message || '오류 발생'}`);
+        alert(`추가 실패: ${data.message}`);
       }
     } catch (err: any) {
-      alert(`통신 오류: ${err.message}`);
-    } finally {
-      setRefreshingId(null);
+      alert(`처리 오류: ${err.message}`);
     }
   }
 
-  // 신규 밴드 큐 추가
-  async function handleAddArtist(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newArtistName.trim()) return;
+  async function handleDismissSuggestion(suggestionId: string) {
+    if (!confirm('이 제보를 반려 처리하시겠습니까?')) return;
+    try {
+      const res = await fetch('/api/songs/suggest', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: suggestionId, status: 'REJECTED' }),
+      });
+      if (res.ok) {
+        setSuggestions((prev) => prev.filter((s) => s.id !== suggestionId));
+      }
+    } catch (err: any) {
+      alert(`반려 오류: ${err.message}`);
+    }
+  }
 
-    setIsAddingArtist(true);
+  async function handleDeleteReportedSong(report: ReportedSong) {
+    if (!confirm(`'${report.title} (${report.artist})' 곡을 DB에서 영구 삭제하시겠습니까?`)) return;
+
+    try {
+      const res = await fetch(`/api/admin/reports?song_id=${report.song_id}`, { method: 'DELETE' });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setLastMessage(`신고 곡 '${report.title}'이 DB에서 영구 삭제되었습니다.`);
+        setReports((prev) => prev.filter((r) => r.report_id !== report.report_id));
+        setSongs((prev) => prev.filter((s) => s.id !== report.song_id));
+      } else {
+        alert(`삭제 실패: ${data.message || data.error}`);
+      }
+    } catch (err: any) {
+      alert(`삭제 오류: ${err.message}`);
+    }
+  }
+
+  async function handleDismissReport(report: ReportedSong) {
+    try {
+      const res = await fetch('/api/admin/reports', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report_id: report.report_id }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setLastMessage(`'${report.title}' 신고를 반려 처리했습니다.`);
+        setReports((prev) => prev.filter((r) => r.report_id !== report.report_id));
+      } else {
+        alert(`반려 실패: ${data.message || data.error}`);
+      }
+    } catch (err: any) {
+      alert(`처리 오류: ${err.message}`);
+    }
+  }
+
+  async function handleCleanupNonBand() {
+    if (!confirm('부적합 음원을 일괄 검사하여 정리하시겠습니까?')) return;
+
+    setIsCleaning(true);
+    setLastMessage('비밴드 장르 음원 검증 및 정리 중...');
+
+    try {
+      const res = await fetch('/api/songs/cleanup', { method: 'POST' });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        const msg = data.message || `${data.deletedCount || 0}곡 정리 완료`;
+        setLastMessage(msg);
+        setSelectedSongIds(new Set());
+        await fetchSongs();
+      } else {
+        setLastMessage(`정리 실패: ${data.error || data.message || `HTTP ${res.status}`}`);
+      }
+    } catch (err: any) {
+      setLastMessage(`정리 오류: ${err.message}`);
+    } finally {
+      setIsCleaning(false);
+    }
+  }
+
+  async function handleDeleteSong(e: React.MouseEvent, song: SongItem) {
+    e.stopPropagation();
+    if (!confirm(`'${song.title} (${song.artist})' 곡을 DB에서 삭제하시겠습니까?`)) return;
+
+    try {
+      const res = await fetch(`/api/songs?id=${song.id}`, { method: 'DELETE' });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setLastMessage(`'${song.title}' 곡이 삭제되었습니다.`);
+        setSongs((prev) => prev.filter((s) => s.id !== song.id));
+        setSelectedSongIds((prev) => {
+          const next = new Set(prev);
+          next.delete(song.id);
+          return next;
+        });
+      } else {
+        alert(`곡 삭제 실패: ${data.message || data.error || `HTTP ${res.status}`}`);
+      }
+    } catch (err: any) {
+      alert(`곡 삭제 오류: ${err.message}`);
+    }
+  }
+
+  async function handleDeleteSelectedSongs() {
+    if (selectedSongIds.size === 0) return;
+    if (!confirm(`선택한 ${selectedSongIds.size}개의 곡을 영구 삭제하시겠습니까?`)) return;
+
+    setIsDeletingSelected(true);
+    setLastMessage(`선택한 ${selectedSongIds.size}곡 일괄 삭제 진행 중...`);
+
+    try {
+      const res = await fetch('/api/songs', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedSongIds) }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setLastMessage(`선택한 ${selectedSongIds.size}곡이 모두 삭제되었습니다.`);
+        setSongs((prev) => prev.filter((s) => !selectedSongIds.has(s.id)));
+        setSelectedSongIds(new Set());
+      } else {
+        alert(`일괄 삭제 실패: ${data.message || data.error || `HTTP ${res.status}`}`);
+      }
+    } catch (err: any) {
+      alert(`일괄 삭제 오류: ${err.message}`);
+    } finally {
+      setIsDeletingSelected(false);
+    }
+  }
+
+  function toggleSongSelection(songId: string) {
+    setSelectedSongIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(songId)) {
+        next.delete(songId);
+      } else {
+        next.add(songId);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectAll(currentFilteredSongs: SongItem[]) {
+    if (selectedSongIds.size === currentFilteredSongs.length && currentFilteredSongs.length > 0) {
+      setSelectedSongIds(new Set());
+    } else {
+      setSelectedSongIds(new Set(currentFilteredSongs.map((s) => s.id)));
+    }
+  }
+
+  async function handleAddTargetArtist(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newArtistName.trim()) {
+      alert('밴드 이름을 입력해 주세요.');
+      return;
+    }
+
+    setAddingArtist(true);
+
     try {
       const res = await fetch('/api/artists', {
         method: 'POST',
@@ -181,612 +506,845 @@ export default function AdminHarvestPage() {
       });
 
       const data = await res.json();
+
       if (res.ok && data.success) {
-        alert(data.message || '밴드가 성공적으로 등록되었습니다.');
+        setLastMessage(`'${newArtistName}' 수집 큐 등록 완료`);
         setNewArtistName('');
         setNewArtistPriority(1);
-        loadAllData();
+        setIsAddArtistOpen(false);
+        await fetchArtists();
       } else {
-        alert(`등록 실패: ${data.message || '오류 발생'}`);
+        alert(`밴드 등록 실패: ${data.message || data.error || `HTTP ${res.status}`}`);
       }
     } catch (err: any) {
       alert(`통신 오류: ${err.message}`);
     } finally {
-      setIsAddingArtist(false);
+      setAddingArtist(false);
     }
   }
 
-  // 밴드 삭제
-  async function handleDeleteArtist(id: string, name: string) {
-    if (!confirm(`'${name}' 밴드를 수집 큐에서 삭제하시겠습니까?`)) return;
+  async function handleDeleteArtist(e: React.MouseEvent, artist: TargetArtist) {
+    e.stopPropagation();
+    if (!confirm(`수집 대상 밴드 '${artist.name}'을(를) 삭제하시겠습니까?`)) return;
 
     try {
-      const res = await fetch(`/api/artists?id=${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/artists?id=${artist.id}`, { method: 'DELETE' });
       const data = await res.json();
+
       if (res.ok && data.success) {
-        setArtists((prev) => prev.filter((a) => a.id !== id));
+        setLastMessage(`'${artist.name}' 수집 대상에서 삭제 완료`);
+        if (selectedArtist === artist.name) {
+          setSelectedArtist('ALL');
+        }
+        await fetchArtists();
       } else {
-        alert(`삭제 실패: ${data.message}`);
+        alert(`밴드 삭제 실패: ${data.message || data.error || `HTTP ${res.status}`}`);
       }
     } catch (err: any) {
-      alert(`통신 오류: ${err.message}`);
+      alert(`삭제 오류: ${err.message}`);
     }
   }
 
-  // 다음 밴드 즉시 수집
-  async function handleTriggerSync() {
-    setIsSyncing(true);
+  async function handleTriggerNow() {
+    setTriggering(true);
+    setLastMessage('다음 아티스트 곡 수집 파이프라인 가동 중...');
+
     try {
       const res = await fetch('/api/songs/sync');
       const data = await res.json();
+
       if (res.ok && data.success) {
-        if (data.lastExecution) {
-          const nowStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-          setLastSyncInfo({
-            artist: data.lastExecution.artist,
-            count: data.lastExecution.count,
-            time: nowStr,
-          });
-          alert(`[수집 완료] 아티스트: ${data.lastExecution.artist}\n신규 추가된 곡: ${data.lastExecution.count}곡`);
-        } else {
-          alert(data.message || '수집 작업을 정상 완료했습니다.');
-        }
-        setCountdown(180);
-        loadAllData();
+        const artist = data.lastExecution?.artist || '아티스트';
+        const count = data.lastExecution?.count || 0;
+        setLastMessage(`${artist} ${count}곡 수집/분석 갱신 완료`);
+        setCountdown(REFRESH_INTERVAL_SECONDS);
+        await fetchArtists();
+        await fetchSongs();
       } else {
-        alert(`수집 실패: ${data.error || '오류 발생'}`);
+        setLastMessage(`수집 실패: ${data.error || data.message || `HTTP ${res.status}`}`);
       }
     } catch (err: any) {
-      alert(`통신 오류: ${err.message}`);
+      setLastMessage(`수집 오류: ${err.message}`);
     } finally {
-      setIsSyncing(false);
+      setTriggering(false);
     }
   }
 
-  // 오디오 백필(BPM/Key) 즉시 실행
-  async function handleTriggerBackfill() {
+  async function handleBackfillAudio() {
+    if (!confirm('기존 곡들의 오디오(BPM & Key) 실측 백필을 진행하시겠습니까? (최대 10곡씩 순차 처리)')) return;
     setIsBackfilling(true);
+    setLastMessage('기존 수집곡 오디오 분석 백필 가동 중...');
+
     try {
-      const res = await fetch('/api/songs/backfill-audio');
+      const res = await fetch('/api/songs/backfill-audio', { method: 'POST' });
       const data = await res.json();
+
       if (res.ok && data.success) {
-        alert(`[오디오 백필 완료] ${data.processedCount || 0}곡 파형 분석 완료`);
+        setLastMessage(`${data.updatedCount || 0}곡 분석 갱신됨 (남은 대상: ${data.remainingCount || 0}곡)`);
+        await fetchSongs();
       } else {
-        alert(`백필 실패: ${data.error || '오류 발생'}`);
+        setLastMessage(`백필 실패: ${data.error || data.message || `HTTP ${res.status}`}`);
       }
     } catch (err: any) {
-      alert(`통신 오류: ${err.message}`);
+      setLastMessage(`백필 오류: ${err.message}`);
     } finally {
       setIsBackfilling(false);
     }
   }
 
-  // 제보 단일 수집
-  async function handleFetchSingleSuggestion(item: SongSuggestion) {
-    setSelectedSuggestion(item);
-    setPreviewSong(null);
-    setIsFetchingSingle(true);
-
-    try {
-      const res = await fetch('/api/songs/suggest/harvest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          suggestion_id: item.id,
-          title: item.title,
-          artist: item.artist,
-          user_youtube_url: item.youtube_url,
-          action: 'FETCH',
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setPreviewSong(data.previewSong);
-      } else {
-        alert(`단일 수집 조회 실패: ${data.message || '오류 발생'}`);
-      }
-    } catch (err: any) {
-      alert(`통신 오류: ${err.message}`);
-    } finally {
-      setIsFetchingSingle(false);
-    }
-  }
-
-  async function handleConfirmSingleSuggestion() {
-    if (!selectedSuggestion || !previewSong) return;
-
-    setIsConfirmingSingle(true);
-    try {
-      const res = await fetch('/api/songs/suggest/harvest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          suggestion_id: selectedSuggestion.id,
-          action: 'CONFIRM',
-          song_data: previewSong,
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        alert(data.message || 'DB에 최종 추가되었습니다.');
-        setPreviewSong(null);
-        setSelectedSuggestion(null);
-        loadAllData();
-      } else {
-        alert(`DB 추가 실패: ${data.message || '오류 발생'}`);
-      }
-    } catch (err: any) {
-      alert(`통신 오류: ${err.message}`);
-    } finally {
-      setIsConfirmingSingle(false);
-    }
-  }
-
-  const pendingSuggestions = suggestions.filter((s) => s.status === 'PENDING');
-
-  const formatTimer = (sec: number) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  };
-
-  return (
-    <main className="min-h-screen bg-[#070913] text-slate-100 p-4 sm:p-6 font-sans">
-      <div className="max-w-7xl mx-auto space-y-6">
-
-        {/* 상단 관리자 툴바[cite: 8] */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-400 bg-clip-text text-transparent">
-                We.Band.Chu 관리자 대시보드
-              </h1>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
-                수집 & 백필 콘솔
-              </span>
+  if (!isAuthenticated) {
+    return (
+      <main className="min-h-screen bg-slate-950 flex items-center justify-center p-4 font-sans text-slate-100">
+        <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl w-full max-w-sm shadow-2xl space-y-6">
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 bg-indigo-950 border border-indigo-800 rounded-xl flex items-center justify-center mx-auto text-indigo-400">
+              <Lock className="w-6 h-6" />
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              밴드 큐 기반 정기 수집(5분), 실측 오디오 백필(1분), 제보 곡 우선 수집 제어 센터[cite: 8]
-            </p>
+            <h1 className="text-xl font-bold text-slate-100">관리자 인증</h1>
+            <p className="text-xs text-slate-400">수집 모니터링 대시보드에 접근하려면 비밀번호를 입력하세요.</p>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={() => setIsReportModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 border border-rose-800/80 text-rose-300 text-xs font-bold transition shadow"
-            >
-              <AlertCircle className="w-3.5 h-3.5" />
-              <span>신고 접수 ({reports.length}건)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsSuggestModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-950/80 hover:bg-purple-900 border border-purple-800/80 text-purple-200 text-xs font-bold transition shadow"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-              <span>제보받은 곡 ({pendingSuggestions.length}건)</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={isBackfilling}
-              onClick={handleTriggerBackfill}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition border border-slate-700 disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isBackfilling ? 'animate-spin' : ''}`} />
-              <span>{isBackfilling ? '백필 실행 중...' : '기존곡 오디오 백필'}</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={isSyncing}
-              onClick={handleTriggerSync}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition shadow disabled:opacity-50"
-            >
-              <Play className={`w-3.5 h-3.5 ${isSyncing ? 'animate-pulse' : ''}`} />
-              <span>{isSyncing ? '수집 진행 중...' : '다음 밴드 즉시 수집'}</span>
-            </button>
-          </div>
-        </header>
-
-        {/* 💡 [복구 완료] 본래 상단 4종 상태 통계 카드 영역[cite: 7] */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-[#0b0e20]/80 border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+          <form onSubmit={handleVerify} className="space-y-4">
             <div>
-              <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                자동 수집 상태
-              </span>
-              <p className="text-sm font-bold text-slate-100 mt-1">가동 중 (1밴드/5분)</p>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="비밀번호 입력"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+              />
             </div>
-            <div className="w-8 h-8 rounded-full bg-emerald-950/60 border border-emerald-800/80 flex items-center justify-center">
-              <Check className="w-4 h-4 text-emerald-400" />
-            </div>
-          </div>
 
-          <div className="bg-[#0b0e20]/80 border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-            <div>
-              <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                <Music2 className="w-3.5 h-3.5 text-indigo-400" />
-                수집 대상 밴드 수
-              </span>
-              <p className="text-lg font-black text-slate-100 mt-1">{artists.length} 팀</p>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-indigo-950/60 border border-indigo-800/80 flex items-center justify-center">
-              <Layers className="w-4 h-4 text-indigo-400" />
-            </div>
-          </div>
-
-          <div className="bg-[#0b0e20]/80 border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-            <div>
-              <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-indigo-400" />
-                마지막 갱신
-              </span>
-              <p className="text-sm font-bold text-slate-100 mt-1">
-                {lastSyncInfo ? `${lastSyncInfo.time}` : '오후 04:10:45'}[cite: 7]
-              </p>
-              <span className="text-[11px] text-indigo-400">
-                {lastSyncInfo ? `${lastSyncInfo.artist} (${lastSyncInfo.count}곡)` : '한로로 (0곡)'}[cite: 7]
-              </span>
-            </div>
-            <button
-              onClick={loadAllData}
-              title="정보 새로고침"
-              className="w-8 h-8 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center hover:bg-slate-800 text-slate-400 hover:text-white transition"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="bg-[#0b0e20]/80 border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-            <div>
-              <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-cyan-400" />
-                다음 갱신
-              </span>
-              <p className="text-lg font-black text-cyan-300 mt-1 font-mono">{formatTimer(countdown)}</p>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-cyan-950/60 border border-cyan-800/80 flex items-center justify-center">
-              <Radio className="w-4 h-4 text-cyan-400" />
-            </div>
-          </div>
-        </section>
-
-        {/* 신규 밴드 추가 폼[cite: 8] */}
-        <section className="bg-[#0b0e20]/80 border border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3">
-          <h2 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-            <Plus className="w-4 h-4 text-indigo-400" />
-            신규 수집 대상 밴드 추가 (LLM 자동 별칭/성별 분석)[cite: 8]
-          </h2>
-          
-          <form onSubmit={handleAddArtist} className="flex flex-col sm:flex-row items-center gap-3">
-            <input
-              type="text"
-              required
-              value={newArtistName}
-              onChange={(e) => setNewArtistName(e.target.value)}
-              placeholder="추가할 밴드 또는 아티스트명 (예: 한로로, 유다빈밴드, 소란, 나상현씨밴드...)"
-              className="flex-1 w-full bg-[#080a17] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-            />
-
-            <select
-              value={newArtistPriority}
-              onChange={(e) => setNewArtistPriority(Number(e.target.value))}
-              className="w-full sm:w-36 bg-[#080a17] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-            >
-              <option value={1}>1순위 (최우선)</option>
-              <option value={2}>2순위 (일반)</option>
-              <option value={3}>3순위 (후순위)</option>
-            </select>
+            {authError && <p className="text-xs text-rose-400 font-medium">{authError}</p>}
 
             <button
               type="submit"
-              disabled={isAddingArtist}
-              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs transition shadow flex items-center justify-center gap-1.5 shrink-0"
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-sm transition shadow flex items-center justify-center gap-2"
             >
-              <Plus className="w-4 h-4" />
-              <span>{isAddingArtist ? 'LLM 분석 및 등록 중...' : '밴드 큐 추가'}</span>
+              <Radio className="w-4 h-4" /> 대시보드 입장
             </button>
           </form>
-        </section>
+        </div>
+      </main>
+    );
+  }
 
-        {/* 수집 대상 밴드 대기열 목록[cite: 8] */}
-        <section className="bg-[#0b0e20]/80 border border-slate-800/80 rounded-2xl p-5 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-purple-400" />
-              수집 대상 밴드 큐 ({artists.length}팀)[cite: 8]
-            </h2>
-            <button
-              type="button"
-              onClick={loadAllData}
-              className="text-slate-400 hover:text-slate-200 text-xs flex items-center gap-1 transition"
-            >
-              <RefreshCw className="w-3.5 h-3.5" /> 새로고침[cite: 8]
-            </button>
+  const filteredSongs = songs.filter((s) => {
+    const matchesArtist = selectedArtist === 'ALL' || s.artist === selectedArtist;
+    const query = searchSongQuery.toLowerCase().trim();
+    const matchesSearch = !query || s.title.toLowerCase().includes(query) || s.artist.toLowerCase().includes(query);
+    return matchesArtist && matchesSearch;
+  });
+
+  const isAllSelected = filteredSongs.length > 0 && selectedSongIds.size === filteredSongs.length;
+
+  return (
+    <main className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 lg:p-8 font-sans">
+      <div className="max-w-7xl mx-auto space-y-5">
+        
+        {/* 상단 간소화된 헤더 */}
+        <header className="flex items-center justify-between pb-3 border-b border-slate-800/80">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xl font-black bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-400 bg-clip-text text-transparent">
+              We.Band.Chu
+            </span>
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
+              우밴추(Admin)
+            </span>
+          </div>
+          <span className="text-[11px] text-slate-500">음원 파이프라인 관리 모니터링</span>
+        </header>
+
+        {lastMessage && (
+          <div className="p-3 bg-slate-900/90 border border-indigo-900/60 rounded-xl text-xs text-indigo-300 flex items-center justify-between">
+            <span>{lastMessage}</span>
+            <button onClick={() => setLastMessage('')} className="text-slate-500 hover:text-slate-300 text-xs">닫기</button>
+          </div>
+        )}
+
+        {/* 💡 [신규] 지표 카드 바로 위 1열 액션 툴바 */}
+        <div className="flex items-center justify-start gap-2.5 flex-wrap bg-slate-900/40 border border-slate-800/60 p-2.5 rounded-2xl">
+          <button
+            type="button"
+            onClick={() => setIsSuggestionsOpen(true)}
+            className="relative flex items-center gap-1.5 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/80 px-3.5 py-2 rounded-xl text-xs text-indigo-200 font-bold shadow transition shrink-0"
+          >
+            <Inbox className="w-3.5 h-3.5 text-indigo-400" />
+            제보받은 곡
+            {suggestions.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.2 bg-indigo-500 text-white rounded-full text-[10px] font-bold animate-pulse">
+                {suggestions.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsReportsOpen(true)}
+            className="relative flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-amber-700/80 px-3.5 py-2 rounded-xl text-xs text-amber-300 font-semibold shadow transition shrink-0"
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            신고된 곡 관리
+            {reports.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.2 bg-amber-500 text-slate-950 rounded-full text-[10px] font-bold">
+                {reports.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            disabled={isCleaning}
+            onClick={handleCleanupNonBand}
+            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-rose-800/80 px-3.5 py-2 rounded-xl text-xs text-rose-300 font-semibold shadow transition disabled:opacity-50 shrink-0"
+          >
+            <ShieldAlert className={`w-3.5 h-3.5 ${isCleaning ? 'animate-spin' : ''}`} />
+            비밴드 음원 정리
+          </button>
+
+          <button
+            type="button"
+            disabled={isBackfilling}
+            onClick={handleBackfillAudio}
+            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-purple-800/80 px-3.5 py-2 rounded-xl text-xs text-purple-300 font-semibold shadow transition disabled:opacity-50 shrink-0"
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${isBackfilling ? 'animate-spin' : ''}`} />
+            기존곡 오디오 백필
+          </button>
+
+          <button
+            type="button"
+            disabled={triggering}
+            onClick={handleTriggerNow}
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 rounded-xl text-xs font-bold text-white shadow transition shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${triggering ? 'animate-spin' : ''}`} />
+            다음 밴드 즉시 수집
+          </button>
+        </div>
+
+        {/* 5대 핵심 지표 카드 + 실시간 카운트다운 타이머 */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+          <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
+            <span className="text-xs text-slate-400 block mb-1">총 수집 곡수</span>
+            <span className="text-2xl font-black text-slate-100">{stats.totalSongs}곡</span>
           </div>
 
-          {loading ? (
-            <div className="p-12 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
-              <RefreshCw className="w-5 h-5 animate-spin text-indigo-400" />
-              밴드 목록 로드 중...
+          <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
+            <span className="text-xs text-slate-400 block mb-1">수집 대상 아티스트</span>
+            <span className="text-2xl font-black text-slate-100">
+              {stats.activeArtists}/{stats.totalArtists}팀
+            </span>
+          </div>
+
+          <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
+            <span className="text-xs text-slate-400 block mb-1">BPM 실측 완료율</span>
+            <span className="text-2xl font-black text-emerald-400">{stats.bpmRate}%</span>
+          </div>
+
+          <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
+            <span className="text-xs text-slate-400 block mb-1">조성(Key) 산출 완료율</span>
+            <span className="text-2xl font-black text-purple-400">{stats.keyRate}%</span>
+          </div>
+
+          <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl col-span-2 sm:col-span-1 flex flex-col justify-between relative overflow-hidden">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-slate-400 flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-indigo-400" /> 마지막 갱신
+                </span>
+                <button
+                  type="button"
+                  onClick={handleManualRefreshNow}
+                  title="지금 즉시 갱신 및 타이머 리셋"
+                  className="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-indigo-400 transition"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isAutoRefreshing ? 'animate-spin text-indigo-400' : ''}`} />
+                </button>
+              </div>
+
+              {stats.lastExecution ? (
+                <div>
+                  <span className="text-sm font-bold text-slate-100 block truncate">
+                    {new Date(stats.lastExecution.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </span>
+                  <span className="text-[10px] text-indigo-400 block truncate mt-0.5">
+                    {stats.lastExecution.artist} ({stats.lastExecution.count}곡)
+                  </span>
+                </div>
+              ) : (
+                <span className="text-sm font-bold text-slate-500">기록 없음</span>
+              )}
             </div>
-          ) : artists.length === 0 ? (
-            <div className="p-12 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-xl">
-              등록된 수집 대상 밴드가 없습니다. 상단에서 밴드를 추가해 보세요![cite: 8]
+
+            <div className="mt-3 pt-2 border-t border-slate-800/80">
+              <div className="flex items-center justify-between text-[11px] mb-1">
+                <span className="text-slate-500 flex items-center gap-1">
+                  <Timer className="w-3 h-3 text-cyan-400" /> 다음 갱신
+                </span>
+                <span className="font-mono font-bold text-cyan-300">
+                  {formatCountdown(countdown)}
+                </span>
+              </div>
+              <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
+                <div 
+                  className="bg-cyan-400 h-full transition-all duration-1000 ease-linear"
+                  style={{ width: `${(countdown / REFRESH_INTERVAL_SECONDS) * 100}%` }}
+                />
+              </div>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-300 border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-800/90 text-slate-500 text-[11px]">
-                    <th className="py-2.5 px-3">밴드명</th>
-                    <th className="py-2.5 px-3">검색 키워드 (search_alias)</th>
-                    <th className="py-2.5 px-3">보컬 성별</th>
-                    <th className="py-2.5 px-3">우선순위</th>
-                    <th className="py-2.5 px-3">마지막 수집 일시</th>
-                    <th className="py-2.5 px-3 text-right">관리</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/40">
-                  {artists.map((artist) => (
-                    <tr key={artist.id} className="hover:bg-[#111429] transition">
-                      <td className="py-3 px-3 font-bold text-slate-100 flex items-center gap-1.5">
-                        <Music2 className="w-3.5 h-3.5 text-indigo-400" />
-                        {artist.name}
-                      </td>
-                      <td className="py-3 px-3">
-                        <span className="font-mono text-slate-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                          {artist.search_alias || artist.name}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                          artist.vocal_gender === 'FEMALE'
-                            ? 'bg-pink-950/70 border-pink-800/70 text-pink-300'
-                            : artist.vocal_gender === 'MALE'
-                            ? 'bg-blue-950/70 border-blue-800/70 text-blue-300'
-                            : 'bg-purple-950/70 border-purple-800/70 text-purple-300'
-                        }`}>
-                          {artist.vocal_gender === 'FEMALE' ? '여성 보컬' : artist.vocal_gender === 'MALE' ? '남성 보컬' : '혼성/객원'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3">
-                        <span className={`text-[11px] font-semibold ${
-                          artist.priority === 1
-                            ? 'text-amber-400 font-bold'
-                            : artist.priority === 2
-                            ? 'text-slate-300'
-                            : 'text-slate-500'
-                        }`}>
-                          {artist.priority === 1 ? '1순위 (최우선)' : artist.priority === 2 ? '2순위 (일반)' : '3순위 (완료/후순위)'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-slate-500 text-[11px]">
-                        {artist.last_harvested_at ? new Date(artist.last_harvested_at).toLocaleString('ko-KR') : '미수집 (대기)'}
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* LLM 정보 갱신 버튼 */}
-                          <button
-                            type="button"
-                            disabled={refreshingId === artist.id}
-                            onClick={() => handleRefreshWithLLM(artist)}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/60 text-indigo-300 text-[11px] font-semibold transition disabled:opacity-50"
-                            title="LLM으로 검색 별칭 및 보컬 성별 재추론"
-                          >
-                            <Sparkles className={`w-3 h-3 ${refreshingId === artist.id ? 'animate-spin' : ''}`} />
-                            <span>{refreshingId === artist.id ? '분석 중...' : '정보 갱신'}</span>
-                          </button>
+          </div>
+        </div>
+
+        {/* 메인 레이아웃 (밴드 패널 + 수집 음원 패널) */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          
+          {/* 좌측: 수집 대상 밴드 패널 */}
+          {isArtistPanelOpen ? (
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3 transition-all">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <h2 className="text-sm font-bold flex items-center gap-1.5 text-slate-200">
+                    <Radio className="w-4 h-4 text-indigo-400" /> 수집 대상 밴드 ({artists.length}팀)
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setIsArtistPanelOpen(false)}
+                    title="밴드 목록 접기"
+                    className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                </div>
+                
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddArtistOpen(true)}
+                    className="text-[11px] flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition shadow"
+                  >
+                    <Plus className="w-3 h-3" /> 밴드 추가
+                  </button>
+
+                  <button 
+                    onClick={() => setSelectedArtist('ALL')} 
+                    className={`text-[10px] px-2 py-0.5 rounded-full border transition ${
+                      selectedArtist === 'ALL' ? 'bg-indigo-600 text-white border-indigo-500' : 'text-slate-400 border-slate-800'
+                    }`}
+                  >
+                    전체
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 max-h-[580px] overflow-y-auto pr-1">
+                {artists
+                  .slice()
+                  .sort((a, b) => a.priority - b.priority)
+                  .map((artist) => {
+                    const isSelected = selectedArtist === artist.name;
+                    const isHarvestCompleted = artist.priority === 3 && !!artist.last_harvested_at;
+
+                    return (
+                      <div
+                        key={artist.id}
+                        onClick={() => setSelectedArtist(isSelected ? 'ALL' : artist.name)}
+                        className={`p-2.5 rounded-xl border text-xs cursor-pointer transition flex items-center justify-between group ${
+                          isSelected 
+                            ? 'bg-indigo-950/70 border-indigo-700 text-indigo-200' 
+                            : isHarvestCompleted
+                            ? 'bg-slate-950/30 border-slate-900 text-slate-400'
+                            : 'bg-slate-950/50 border-slate-800/80 hover:border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1 pr-2">
+                          <span className={`font-bold block truncate ${isHarvestCompleted ? 'text-slate-400' : 'text-slate-200'}`}>
+                            {artist.name}
+                          </span>
+                          <span className="text-[10px] text-slate-500 block truncate">
+                            {artist.last_harvested_at 
+                              ? `최근 수집: ${new Date(artist.last_harvested_at).toLocaleDateString()}`
+                              : '수집 대기 중'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {isHarvestCompleted ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800 font-semibold flex items-center gap-0.5">
+                              <Check className="w-2.5 h-2.5" /> 수집완료
+                            </span>
+                          ) : (
+                            <span className={`text-[10px] px-2 py-0.5 rounded border font-medium ${
+                              artist.priority === 1 
+                                ? 'bg-indigo-950 text-indigo-300 border-indigo-800' 
+                                : 'bg-slate-900 text-slate-400 border-slate-800'
+                            }`}>
+                              {artist.priority}순위
+                            </span>
+                          )}
 
                           <button
                             type="button"
-                            onClick={() => handleDeleteArtist(artist.id, artist.name)}
-                            className="p-1.5 rounded-lg border border-rose-900/40 bg-rose-950/30 text-rose-400 hover:bg-rose-900/60 transition"
-                            title="밴드 삭제"
+                            onClick={(e) => handleDeleteArtist(e, artist)}
+                            title={`'${artist.name}' 수집 대상에서 삭제`}
+                            className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900/80 text-rose-400 hover:text-rose-200 border border-rose-800/80 transition shadow-sm"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-      </div>
-
-      {/* 제보받은 곡 관리 모달 */}
-      {isSuggestModalOpen && (
-        <div 
-          className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => setIsSuggestModalOpen(false)}
-        >
-          <div 
-            className="bg-[#0e1227] border border-slate-800 rounded-3xl w-full max-w-3xl p-6 shadow-2xl space-y-5 text-xs text-slate-200 max-h-[90vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between border-b border-slate-800/80 pb-3">
-              <div>
-                <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-purple-400" />
-                  제보받은 곡 관리 ({pendingSuggestions.length}건 대기)
-                </h3>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  유저들이 워크스페이스에서 제보한 곡입니다. '해당 곡 우선 수집'을 누르면 즉시 실측 오디오 분석과 함께 등록할 수 있습니다.
-                </p>
+                      </div>
+                    );
+                  })}
               </div>
+            </div>
+          ) : (
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3 flex flex-col items-center gap-2">
               <button
                 type="button"
-                onClick={() => setIsSuggestModalOpen(false)}
-                className="text-slate-400 hover:text-slate-100 p-1 rounded-lg hover:bg-slate-800 transition"
+                onClick={() => setIsArtistPanelOpen(true)}
+                title="밴드 목록 펼치기"
+                className="w-full flex items-center justify-center gap-1 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-indigo-400 hover:text-indigo-300 text-xs font-bold transition"
               >
-                <X className="w-5 h-5" />
+                <ChevronRight className="w-4 h-4" />
+                <span>밴드 목록 펼치기 ({artists.length})</span>
               </button>
+              {selectedArtist !== 'ALL' && (
+                <span className="text-[10px] px-2 py-1 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 text-center">
+                  필터: {selectedArtist}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* 우측: 수집 음원 패널 */}
+          <div className={`${isArtistPanelOpen ? 'lg:col-span-2' : 'lg:col-span-3'} bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3 transition-all`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-800/60 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <h2 className="text-sm font-bold flex items-center gap-1.5 text-slate-200">
+                    <Music2 className="w-4 h-4 text-purple-400" />
+                    수집 음원 ({filteredSongs.length}곡)
+                    {selectedArtist !== 'ALL' && <span className="text-indigo-400 text-xs">({selectedArtist})</span>}
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setIsSongPanelOpen((prev) => !prev)}
+                    title={isSongPanelOpen ? '음원 목록 접기' : '음원 목록 펼치기'}
+                    className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition"
+                  >
+                    {isSongPanelOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
+                </div>
+
+                {isSongPanelOpen && selectedSongIds.size > 0 && (
+                  <button
+                    type="button"
+                    disabled={isDeletingSelected}
+                    onClick={handleDeleteSelectedSongs}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition shadow disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    {selectedSongIds.size}개 선택 삭제
+                  </button>
+                )}
+              </div>
+
+              {isSongPanelOpen && (
+                <div className="flex items-center gap-2">
+                  {filteredSongs.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => toggleSelectAll(filteredSongs)}
+                      className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-indigo-300 px-2 py-1 bg-slate-950 border border-slate-800 rounded-lg transition"
+                    >
+                      {isAllSelected ? <CheckSquare className="w-3.5 h-3.5 text-indigo-400" /> : <Square className="w-3.5 h-3.5" />}
+                      전체선택
+                    </button>
+                  )}
+
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={searchSongQuery}
+                      onChange={(e) => setSearchSongQuery(e.target.value)}
+                      placeholder="곡명 또는 밴드 검색..."
+                      className="bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full sm:w-48"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-              {pendingSuggestions.length === 0 ? (
-                <div className="p-12 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
-                  대기 중인 제보 곡이 없습니다.
-                </div>
+            {isSongPanelOpen ? (
+              loading ? (
+                <div className="p-12 text-center text-slate-500 text-xs">음원 데이터 로드 중...</div>
+              ) : filteredSongs.length === 0 ? (
+                <div className="p-12 text-center text-slate-500 text-xs">조건에 맞는 음원이 없습니다.</div>
               ) : (
-                pendingSuggestions.map((item) => (
-                  <div 
-                    key={item.id}
-                    className="p-3.5 bg-[#080a17] border border-slate-800 rounded-2xl space-y-3"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-100 text-sm">{item.title}</span>
-                          <span className="text-[11px] text-indigo-400 font-semibold">• {item.artist}</span>
-                        </div>
-                        <div className="text-[11px] text-slate-500 mt-0.5">
-                          제보 밴드: <span className="text-slate-300">{item.band_name || '미기재'}</span> | {new Date(item.created_at).toLocaleString('ko-KR')}
-                        </div>
-                      </div>
+                <div className="space-y-2 max-h-[580px] overflow-y-auto pr-1">
+                  {filteredSongs.map((song) => {
+                    const isChecked = selectedSongIds.has(song.id);
+                    const youtubeTargetUrl = song.youtube_url || `https://www.youtube.com/results?search_query=${encodeURIComponent(`${song.artist} ${song.title}`)}`;
 
-                      <button
-                        type="button"
-                        disabled={isFetchingSingle && selectedSuggestion?.id === item.id}
-                        onClick={() => handleFetchSingleSuggestion(item)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition shadow shrink-0 disabled:opacity-50"
+                    return (
+                      <div
+                        key={song.id}
+                        onClick={() => toggleSongSelection(song.id)}
+                        className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs cursor-pointer transition ${
+                          isChecked 
+                            ? 'bg-indigo-950/40 border-indigo-600/80' 
+                            : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700'
+                        }`}
                       >
-                        <Play className="w-3 h-3" />
-                        <span>{isFetchingSingle && selectedSuggestion?.id === item.id ? '파형 분석 중...' : '해당 곡 우선 수집'}</span>
-                      </button>
-                    </div>
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div 
+                            className="shrink-0 text-slate-400" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleSongSelection(song.id);
+                            }}
+                          >
+                            {isChecked ? (
+                              <CheckSquare className="w-4 h-4 text-indigo-400" />
+                            ) : (
+                              <Square className="w-4 h-4 text-slate-600 hover:text-slate-400" />
+                            )}
+                          </div>
 
-                    {previewSong && selectedSuggestion?.id === item.id && (
-                      <div className="p-3 bg-[#11142e] border border-purple-800/80 rounded-xl space-y-3">
-                        <div className="flex items-center justify-between border-b border-purple-900/60 pb-2">
-                          <span className="text-[11px] font-bold text-purple-300 flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                            실측 음원 파형 분석 완료
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-slate-200 truncate">{song.title}</span>
+                              <span className="text-slate-400">({song.artist})</span>
+                            </div>
+
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">
+                              <span>{song.genre || '장르 미지정'}</span>
+                              <span>•</span>
+                              <span>{new Date(song.created_at).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                            song.bpm 
+                              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800' 
+                              : 'bg-slate-900 text-slate-500 border-slate-800'
+                          }`}>
+                            {song.bpm ? `${song.bpm} BPM` : 'BPM 대기'}
                           </span>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800">
-                              {previewSong.bpm ? `${previewSong.bpm} BPM` : 'BPM 대기'}
-                            </span>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
-                              {previewSong.original_key || '원키 유지'}
-                            </span>
-                          </div>
-                        </div>
 
-                        <div className="flex items-center justify-between gap-3 text-xs">
-                          <div>
-                            <span className="text-slate-200 font-bold block">{previewSong.title}</span>
-                            <span className="text-[11px] text-slate-400">{previewSong.artist} • {previewSong.genre}</span>
-                          </div>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                            song.original_key 
+                              ? 'bg-purple-950/80 text-purple-300 border-purple-800' 
+                              : 'bg-slate-900 text-slate-500 border-slate-800'
+                          }`}>
+                            {song.original_key ? `${song.original_key} Key` : 'Key 미산출'}
+                          </span>
 
-                          {previewSong.preview_url && (
-                            <audio controls src={previewSong.preview_url} className="h-8 max-w-[200px]" />
-                          )}
-                        </div>
+                          <a
+                            href={youtubeTargetUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`YouTube에서 '${song.artist} - ${song.title}' 듣기/확인`}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-800/80 text-rose-300 hover:text-rose-100 text-[11px] font-semibold transition shadow-sm"
+                          >
+                            <Play className="w-3 h-3 fill-rose-300 text-rose-300" />
+                            <span>YouTube</span>
+                            <ExternalLink className="w-2.5 h-2.5 ml-0.5 opacity-70" />
+                          </a>
 
-                        <div className="flex justify-end pt-1">
                           <button
                             type="button"
-                            disabled={isConfirmingSingle}
-                            onClick={handleConfirmSingleSuggestion}
-                            className="flex items-center gap-1 px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow disabled:opacity-50"
+                            onClick={(e) => handleDeleteSong(e, song)}
+                            title={`'${song.title}' 곡 삭제`}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/50 border border-transparent hover:border-rose-900/60 transition"
                           >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>{isConfirmingSingle ? 'DB 저장 중...' : '확인 후 DB 최종 추가'}</span>
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="flex justify-end pt-2 border-t border-slate-800/80">
-              <button
-                type="button"
-                onClick={() => setIsSuggestModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
+                    );
+                  })}
+                </div>
+              )
+            ) : (
+              <div 
+                onClick={() => setIsSongPanelOpen(true)}
+                className="py-3 px-4 rounded-xl bg-slate-950/50 hover:bg-slate-900 border border-slate-800 text-center text-xs text-slate-400 cursor-pointer transition flex items-center justify-center gap-1.5"
               >
-                닫기
-              </button>
-            </div>
+                <span>음원 목록이 접혀 있습니다. 클릭하여 펼치기 ({filteredSongs.length}곡)</span>
+                <ChevronDown className="w-4 h-4 text-purple-400" />
+              </div>
+            )}
           </div>
         </div>
-      )}
 
-      {/* 곡 신고 내역 모달 */}
-      {isReportModalOpen && (
-        <div 
-          className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => setIsReportModalOpen(false)}
-        >
-          <div 
-            className="bg-[#0e1227] border border-slate-800 rounded-3xl w-full max-w-2xl p-6 shadow-2xl space-y-4 text-xs text-slate-200 max-h-[85vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between border-b border-slate-800/80 pb-3">
-              <div>
-                <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-400" />
-                  유저 신고 접수 내역 ({reports.length}건)
-                </h3>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  합주곡 부적합 또는 잘못된 음원 정보로 신고된 곡 목록입니다.
-                </p>
-              </div>
+      </div>
+
+      {/* 제보받은 곡 관리 및 단일 우선 수집 모달 */}
+      {isSuggestionsOpen && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-base text-slate-100 flex items-center gap-2">
+                <Inbox className="w-4 h-4 text-indigo-400" />
+                클라이언트 제보 곡 관리 ({suggestions.length}건)
+              </h3>
               <button
                 type="button"
-                onClick={() => setIsReportModalOpen(false)}
-                className="text-slate-400 hover:text-slate-100 p-1 rounded-lg hover:bg-slate-800 transition"
+                onClick={() => setIsSuggestionsOpen(false)}
+                className="text-slate-400 hover:text-slate-200"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-              {reports.length === 0 ? (
-                <div className="p-12 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
-                  접수된 신고 내역이 없습니다.
-                </div>
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1 text-xs">
+              {suggestions.length === 0 ? (
+                <div className="p-12 text-center text-slate-500">대기 중인 제보 곡이 없습니다.</div>
               ) : (
-                reports.map((report) => (
-                  <div key={report.id} className="p-3 bg-[#080a17] border border-slate-800 rounded-xl space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-200">{report.title} ({report.artist})</span>
-                      <span className="text-[10px] text-slate-500">{new Date(report.created_at).toLocaleString('ko-KR')}</span>
-                    </div>
-                    <div className="text-[11px] text-rose-300 bg-rose-950/40 border border-rose-900/40 p-2 rounded-lg">
-                      사유: {report.reason}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+                suggestions.map((suggestion) => {
+                  const preview = previewHarvestData[suggestion.id];
+                  const isHarvesting = harvestingSuggestionId === suggestion.id;
 
-            <div className="flex justify-end pt-2 border-t border-slate-800/80">
-              <button
-                type="button"
-                onClick={() => setIsReportModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
-              >
-                닫기
-              </button>
+                  return (
+                    <div
+                      key={suggestion.id}
+                      className="p-4 bg-slate-950/80 border border-slate-800 rounded-xl space-y-3"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-100 text-sm">{suggestion.title}</span>
+                            <span className="text-slate-400">({suggestion.artist})</span>
+                            <span className="px-2 py-0.5 rounded bg-indigo-950 border border-indigo-800 text-[10px] text-indigo-300 font-semibold">
+                              제보 밴드: {suggestion.band_name}
+                            </span>
+                          </div>
+                          <span className="text-slate-500 text-[10px] block mt-1">
+                            제보일시: {new Date(suggestion.created_at).toLocaleString()}
+                          </span>
+                        </div>
+
+                        {suggestion.youtube_url && (
+                          <a
+                            href={suggestion.youtube_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-950/60 border border-rose-800/80 text-rose-300 hover:bg-rose-900 transition text-[11px]"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            제보 영상 링크
+                          </a>
+                        )}
+                      </div>
+
+                      {preview && (
+                        <div className="p-3 bg-indigo-950/30 border border-indigo-900/60 rounded-lg flex items-center justify-between text-[11px]">
+                          <div>
+                            <span className="text-indigo-300 font-bold block">수집 데이터 확인:</span>
+                            <span className="text-slate-300">
+                              {preview.title} • {preview.artist} ({preview.genre})
+                            </span>
+                          </div>
+                          {preview.preview_url && (
+                            <audio controls src={preview.preview_url} className="h-6 w-48" />
+                          )}
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-900">
+                        <button
+                          type="button"
+                          onClick={() => handleDismissSuggestion(suggestion.id)}
+                          className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
+                        >
+                          반려
+                        </button>
+
+                        {!preview ? (
+                          <button
+                            type="button"
+                            disabled={isHarvesting}
+                            onClick={() => handleHarvestSingleSuggestion(suggestion)}
+                            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold transition shadow"
+                          >
+                            <Sparkles className={`w-3.5 h-3.5 ${isHarvesting ? 'animate-spin' : ''}`} />
+                            {isHarvesting ? '정보 수집 중...' : '해당 곡 우선 수집'}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmAddSuggestion(suggestion)}
+                            className="flex items-center gap-1 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            확인 후 DB 추가 (+밴드 등록)
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
       )}
 
+      {/* 신고된 곡 관리 모달 */}
+      {isReportsOpen && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-base text-slate-100 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                접수된 곡 신고 내역 ({reports.length}건)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsReportsOpen(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1 text-xs">
+              {reports.length === 0 ? (
+                <div className="p-12 text-center text-slate-500">대기 중인 신고 내역이 없습니다.</div>
+              ) : (
+                reports.map((report) => (
+                  <div
+                    key={report.report_id}
+                    className="p-4 bg-slate-950/80 border border-slate-800 rounded-xl space-y-3"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-100 text-sm">{report.title}</span>
+                          <span className="text-slate-400">({report.artist})</span>
+                          <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-[10px] text-slate-400">
+                            {report.genre}
+                          </span>
+                        </div>
+                        <div className="text-amber-400/90 text-xs mt-1.5 flex items-center gap-1.5">
+                          <span className="font-semibold text-amber-500">신고 사유:</span>
+                          <span>{report.reason}</span>
+                        </div>
+                      </div>
+
+                      {report.youtube_url ? (
+                        <a
+                          href={report.youtube_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-950/60 border border-rose-800/80 text-rose-300 hover:bg-rose-900 transition shrink-0"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          YouTube 확인
+                        </a>
+                      ) : (
+                        <span className="text-slate-500 text-[11px]">YouTube 링크 없음</span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-900">
+                      <button
+                        type="button"
+                        onClick={() => handleDismissReport(report)}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
+                      >
+                        <Check className="w-3.5 h-3.5 text-slate-400" />
+                        신고 반려 (정상곡 유지)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteReportedSong(report)}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold transition shadow"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        곡 영구 삭제
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 수집 대상 밴드 신규 등록 모달 */}
+      {isAddArtistOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-base text-slate-100 flex items-center gap-2">
+                <Radio className="w-4 h-4 text-indigo-400" />
+                신규 수집 대상 밴드 등록
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsAddArtistOpen(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddTargetArtist} className="space-y-4 text-xs">
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">
+                  밴드 / 아티스트명 <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newArtistName}
+                  onChange={(e) => setNewArtistName(e.target.value)}
+                  placeholder="예: 검정치마, 소란, 루시, 데이식스..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">수집 우선순위</label>
+                <select
+                  value={newArtistPriority}
+                  onChange={(e) => setNewArtistPriority(Number(e.target.value))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value={1}>1순위 (최우선 수집)</option>
+                  <option value={2}>2순위 (일반)</option>
+                  <option value={3}>3순위 (후순위)</option>
+                </select>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddArtistOpen(false)}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  disabled={addingArtist}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold transition shadow flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  {addingArtist ? '등록 중...' : '수집 대상에 추가'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
