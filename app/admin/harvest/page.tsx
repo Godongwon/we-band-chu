@@ -70,7 +70,7 @@ export default function HarvestAdminPage() {
   const [isReportsOpen, setIsReportsOpen] = useState<boolean>(false);
 
   // 💡 [추가] 수집 대상 밴드 패널 접기/펼치기 상태
-  const [isArtistPanelOpen, setIsArtistPanelOpen] = useState<boolean>(true);
+  const [isArtistPanelOpen, setIsArtistPanelOpen] = useState<boolean>(false);
 
   const [loading, setLoading] = useState<boolean>(false);
   const [triggering, setTriggering] = useState<boolean>(false);
@@ -551,7 +551,7 @@ export default function HarvestAdminPage() {
                 We.Band.Chu
               </span>
               <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
-                우밴추
+                우밴추(Admin)
               </span>
             </div>
 
