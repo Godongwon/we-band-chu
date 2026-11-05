@@ -32,20 +32,33 @@ export async function POST(req: Request) {
 
     // 5 & 6단계: DB 최종 추가 및 밴드 자동 등록 (action === 'CONFIRM')
     if (action === 'CONFIRM' && song_data) {
-      // 1) songs 테이블에 곡 추가
-      const { error: songErr } = await supabase
-        .from('songs')
-        .insert([
-          {
-            title: song_data.title,
-            artist: song_data.artist,
-            genre: song_data.genre,
-            preview_url: song_data.preview_url,
-            youtube_url: song_data.youtube_url,
-            bpm: song_data.bpm,
-            original_key: song_data.original_key,
-          },
-        ]);
+      // 1) songs 테이블 기본 payload 준비
+      const insertPayload: any = {
+        title: song_data.title,
+        artist: song_data.artist,
+        genre: song_data.genre || 'Rock',
+        youtube_url: song_data.youtube_url || null,
+        bpm: song_data.bpm || null,
+        original_key: song_data.original_key || null,
+      };
+
+      // preview_url 컬럼이 DB에 있을 때만 삽입 시도 (에러 방어)
+      if (song_data.preview_url) {
+        insertPayload.preview_url = song_data.preview_url;
+      }
+
+      let songErr: any = null;
+
+      // 1차 삽입 시도
+      const res1 = await supabase.from('songs').insert([insertPayload]);
+      songErr = res1.error;
+
+      // 만약 preview_url 컬럼이 없어서 스키마 에러가 난 경우 preview_url 제외하고 재시도
+      if (songErr && songErr.message?.includes('preview_url')) {
+        delete insertPayload.preview_url;
+        const res2 = await supabase.from('songs').insert([insertPayload]);
+        songErr = res2.error;
+      }
 
       if (songErr) throw songErr;
 
