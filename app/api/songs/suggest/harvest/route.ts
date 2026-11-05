@@ -69,7 +69,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, previewSong });
     }
 
-    if (action === 'CONFIRM' && song_data) {
+ if (action === 'CONFIRM' && song_data) {
       // 1) target_artists 존재 여부 확인 및 없으면 LLM 자동 분석
       const { data: existingArtist } = await supabase
         .from('target_artists')
@@ -80,7 +80,6 @@ export async function POST(req: Request) {
       let targetVocalGender = existingArtist?.vocal_gender;
 
       if (!existingArtist) {
-        // 💡 LLM 분류 실행
         const classified = await classifyArtistWithLLM(song_data.artist);
         targetVocalGender = classified.vocal_gender;
 
@@ -95,7 +94,30 @@ export async function POST(req: Request) {
         ]);
       }
 
-      // 2) songs 테이블에 vocal_gender 포함 저장
+      // 💡 2) songs 테이블에 이미 동일 곡(artist + title)이 존재하는지 확인
+      const { data: duplicateSong } = await supabase
+        .from('songs')
+        .select('id, title, artist')
+        .eq('artist', song_data.artist)
+        .eq('title', song_data.title)
+        .maybeSingle();
+
+      if (duplicateSong) {
+        // 이미 DB에 곡이 존재하는 경우: 중복 INSERT를 피하고 제보 상태만 HARVESTED로 완료 처리
+        if (suggestion_id) {
+          await supabase
+            .from('song_suggestions')
+            .update({ status: 'HARVESTED' })
+            .eq('id', suggestion_id);
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: `'${song_data.title}'은(는) 이미 DB에 존재하는 곡입니다. 제보 상태를 수집 완료로 갱신했습니다.`,
+        });
+      }
+
+      // 3) 중복이 없으면 정상 INSERT 진행
       const insertPayload: any = {
         title: song_data.title,
         artist: song_data.artist,
@@ -118,7 +140,7 @@ export async function POST(req: Request) {
       }
       if (songErr) throw songErr;
 
-      // 3) 제보 상태 갱신
+      // 4) 제보 상태 갱신
       if (suggestion_id) {
         await supabase
           .from('song_suggestions')
