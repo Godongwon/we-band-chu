@@ -48,7 +48,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
 
   const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
 
-  // 💡 [핵심] 로그인 세션 검사 (B 방법: localStorage 기반)
+  // 로그인 세션 검사 (없으면 루트 로그인으로 이동)
   useEffect(() => {
     try {
       const stored = localStorage.getItem('current_band');
@@ -61,8 +61,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
           has_keys: parsed.has_keys ?? true,
         });
       } else if (!currentBand) {
-        // 저장된 밴드 세션이 없으면 입장(로그인) 화면으로 리다이렉트
-        router.replace('/');
+        window.location.href = '/';
         return;
       }
     } catch (e) {
@@ -70,7 +69,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     } finally {
       setIsAuthChecking(false);
     }
-  }, [currentBand, router]);
+  }, [currentBand]);
 
   // 구성 수정 모달 State
   const [isEditProfileOpen, setIsEditProfileOpen] = useState<boolean>(false);
@@ -78,6 +77,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
   const [editVocalGender, setEditVocalGender] = useState<string>(bandProfile.vocal_gender);
   const [editGuitarCount, setEditGuitarCount] = useState<number>(bandProfile.guitar_count);
   const [editHasKeys, setEditHasKeys] = useState<boolean>(bandProfile.has_keys);
+  const [isSavingProfile, setIsSavingProfile] = useState<boolean>(false);
 
   const [activeTab, setActiveTab] = useState<string>('HIGH_TENSION');
   const [recommendedSongs, setRecommendedSongs] = useState<SongItem[]>([]);
@@ -125,12 +125,12 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     }
   }, [activeTab, isAuthChecking]);
 
-  // 💡 [핵심] 로그아웃 핸들러
+  // 로그아웃 핸들러
   function handleLogout() {
     if (confirm(`'${bandProfile.name}' 워크스페이스에서 로그아웃하시겠습니까?`)) {
       localStorage.removeItem('current_band');
       sessionStorage.removeItem('current_band');
-      router.replace('/');
+      window.location.href = '/';
     }
   }
 
@@ -142,7 +142,8 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     setIsEditProfileOpen(true);
   }
 
-  function handleSaveProfile(e: React.FormEvent) {
+  // 💡 [DB 연동 적용] 실제 Supabase DB 반영 및 로컬 상태/추천곡 동기화
+  async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault();
     if (!editName.trim()) {
       alert('밴드명을 입력해 주세요.');
@@ -156,11 +157,34 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
       has_keys: Boolean(editHasKeys),
     };
 
-    setBandProfile(updatedProfile);
-    localStorage.setItem('current_band', JSON.stringify(updatedProfile));
-    setIsEditProfileOpen(false);
+    setIsSavingProfile(true);
 
-    fetchRecommendations(activeTab, updatedProfile);
+    try {
+      // 1. Supabase bands 테이블에 저장 API 호출
+      const res = await fetch('/api/band/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedProfile),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'DB 업데이트 중 오류가 발생했습니다.');
+      }
+
+      // 2. React State 및 LocalStorage 갱신
+      setBandProfile(updatedProfile);
+      localStorage.setItem('current_band', JSON.stringify(updatedProfile));
+      setIsEditProfileOpen(false);
+
+      // 3. 변경된 밴드 구성(보컬 음역, 악기 세션)을 반영하여 추천곡 즉시 재호출
+      fetchRecommendations(activeTab, updatedProfile);
+      alert('밴드 구성이 DB에 정상적으로 반영되었습니다!');
+    } catch (err: any) {
+      alert(`구성 저장 실패: ${err.message}`);
+    } finally {
+      setIsSavingProfile(false);
+    }
   }
 
   async function handleReportSong(song: SongItem) {
@@ -260,7 +284,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     <main className="min-h-screen bg-[#070913] text-slate-100 p-4 sm:p-6 font-sans">
       <div className="max-w-7xl mx-auto space-y-4">
         
-        {/* 상단 미니멀 헤더 */}
+        {/* 상단 헤더 */}
         <header className="flex items-center justify-between pb-3 border-b border-slate-900">
           <div className="flex items-center gap-2">
             <span className="text-xl font-black bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-400 bg-clip-text text-transparent">
@@ -271,7 +295,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
             </span>
           </div>
 
-          {/* 💡 로그아웃 버튼 연결 완료 */}
           <button 
             type="button"
             onClick={handleLogout}
@@ -524,11 +547,11 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
 
       </div>
 
-      {/* 밴드 구성 수정 모달 */}
+      {/* 밴드 구성 수정 모달 (DB 저장 연동) */}
       {isEditProfileOpen && (
         <div 
           className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => setIsEditProfileOpen(false)}
+          onClick={() => !isSavingProfile && setIsEditProfileOpen(false)}
         >
           <div 
             className="bg-[#0e1227] border border-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4 text-xs text-slate-200"
@@ -541,13 +564,14 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
                   밴드 구성 수정
                 </h3>
                 <p className="text-[11px] text-slate-400 mt-1">
-                  밴드 사운드 및 추천 알고리즘에 적용될 세션 구성 정보를 변경합니다.
+                  설정 저장 시 데이터베이스(DB)와 추천 알고리즘에 즉시 반영됩니다.
                 </p>
               </div>
               <button
                 type="button"
+                disabled={isSavingProfile}
                 onClick={() => setIsEditProfileOpen(false)}
-                className="text-slate-400 hover:text-slate-100 p-1 rounded-lg hover:bg-slate-800 transition"
+                className="text-slate-400 hover:text-slate-100 p-1 rounded-lg hover:bg-slate-800 transition disabled:opacity-50"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -659,17 +683,19 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
               <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-800/80">
                 <button
                   type="button"
+                  disabled={isSavingProfile}
                   onClick={() => setIsEditProfileOpen(false)}
-                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition disabled:opacity-50"
                 >
                   취소
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition shadow flex items-center gap-1.5"
+                  disabled={isSavingProfile}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold transition shadow flex items-center gap-1.5"
                 >
                   <Check className="w-3.5 h-3.5" />
-                  설정 저장
+                  {isSavingProfile ? 'DB 저장 중...' : '설정 저장'}
                 </button>
               </div>
             </form>
