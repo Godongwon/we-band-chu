@@ -126,13 +126,16 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
   }, [activeTab, isAuthChecking]);
 
   // 💡 [핵심] 로그아웃 핸들러
-  function handleLogout() {
-    if (confirm(`'${bandProfile.name}' 워크스페이스에서 로그아웃하시겠습니까?`)) {
-      localStorage.removeItem('current_band');
-      sessionStorage.removeItem('current_band');
-      router.replace('/');
-    }
+function handleLogout() {
+  if (confirm(`'${bandProfile.name}' 워크스페이스에서 로그아웃하시겠습니까?`)) {
+    // 1. 저장된 밴드 세션 데이터 전체 삭제
+    localStorage.removeItem('current_band');
+    sessionStorage.removeItem('current_band');
+    
+    // 2. Next.js 라우터 대신 브라우저 전체 새로고침 이동으로 세션 상태 리셋
+    window.location.href = '/';
   }
+}
 
   function handleOpenEditProfile() {
     setEditName(bandProfile.name);
