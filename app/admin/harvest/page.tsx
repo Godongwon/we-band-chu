@@ -81,7 +81,7 @@ export default function HarvestAdminPage() {
   const [newArtistPriority, setNewArtistPriority] = useState<number>(1);
   const [addingArtist, setAddingArtist] = useState<boolean>(false);
 
-  // 상단 지표 계산 (최신 수집 음원 기반 갱신 시간 산출)
+  // 상단 지표 실시간 계산 (target_artists의 최신 last_harvested_at 기준 산출)
   const stats = useMemo(() => {
     const totalSongs = songs.length;
     const totalArtists = artists.length;
@@ -93,28 +93,25 @@ export default function HarvestAdminPage() {
     const bpmRate = totalSongs > 0 ? Math.round((analyzedBpmCount / totalSongs) * 100) : 0;
     const keyRate = totalSongs > 0 ? Math.round((analyzedKeyCount / totalSongs) * 100) : 0;
 
+    // 가장 최근 수집된 아티스트 기록 탐색
+    const harvested = artists
+      .filter((a) => a.last_harvested_at)
+      .sort((a, b) => new Date(b.last_harvested_at!).getTime() - new Date(a.last_harvested_at!).getTime());
+
     let lastExecution = null;
-    const latestSong = songs[0];
-
-    if (latestSong && latestSong.created_at) {
+    if (harvested.length > 0) {
+      const latest = harvested[0];
       lastExecution = {
-        artist: latestSong.artist,
-        count: songs.filter((s) => s.artist === latestSong.artist).length,
-        time: latestSong.created_at,
+        artist: latest.name,
+        count: songs.filter((s) => s.artist === latest.name).length,
+        time: latest.last_harvested_at!,
       };
-    } else {
-      const harvestedArtists = artists
-        .filter((a) => a.last_harvested_at)
-        .sort((a, b) => new Date(b.last_harvested_at!).getTime() - new Date(a.last_harvested_at!).getTime());
-
-      if (harvestedArtists.length > 0) {
-        const latest = harvestedArtists[0];
-        lastExecution = {
-          artist: latest.name,
-          count: songs.filter((s) => s.artist === latest.name).length,
-          time: latest.last_harvested_at!,
-        };
-      }
+    } else if (songs.length > 0 && songs[0].created_at) {
+      lastExecution = {
+        artist: songs[0].artist,
+        count: songs.filter((s) => s.artist === songs[0].artist).length,
+        time: songs[0].created_at,
+      };
     }
 
     return {
@@ -136,7 +133,7 @@ export default function HarvestAdminPage() {
     }
   }, []);
 
-  // 과도한 15초 곡 목록 전수 조회를 방지하고 가벼운 상태만 주기적 확인
+  // 💡 가벼운 자동 갱신 폴링 (대용량 곡 조회를 매번 하지 않고 아티스트 갱신 시에만 곡 fetch)
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -144,10 +141,31 @@ export default function HarvestAdminPage() {
     fetchSongs();
     fetchReports();
 
-    const interval = setInterval(() => {
-      fetchArtists();
-      fetchReports();
-    }, 30000);
+    let lastKnownTime: string | null = null;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/artists');
+        const data = await res.json();
+        if (data?.artists) {
+          setArtists(data.artists);
+
+          // 가장 최근 수집된 시각 비교
+          const latest = data.artists
+            .filter((a: any) => a.last_harvested_at)
+            .sort((a: any, b: any) => new Date(b.last_harvested_at).getTime() - new Date(a.last_harvested_at).getTime())[0];
+
+          if (latest && latest.last_harvested_at !== lastKnownTime) {
+            lastKnownTime = latest.last_harvested_at;
+            // 수집이 새로 일어났을 때만 곡 목록 갱신
+            fetchSongs();
+          }
+        }
+        fetchReports();
+      } catch (e) {
+        console.error('[자동 갱신 폴링 실패]:', e);
+      }
+    }, 30000); // 30초 주기
 
     return () => clearInterval(interval);
   }, [isAuthenticated]);
@@ -163,9 +181,7 @@ export default function HarvestAdminPage() {
         body: JSON.stringify({ password }),
       });
 
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
-
+      const data = await res.json();
       if (res.ok && data.success) {
         setIsAuthenticated(true);
         sessionStorage.setItem('admin_authenticated', 'true');
@@ -180,8 +196,7 @@ export default function HarvestAdminPage() {
   async function fetchArtists() {
     try {
       const res = await fetch('/api/artists');
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
+      const data = await res.json();
       if (res.ok && data.artists) {
         setArtists(data.artists);
       }
@@ -193,9 +208,8 @@ export default function HarvestAdminPage() {
   async function fetchSongs() {
     setLoading(true);
     try {
-      const res = await fetch('/api/songs?limit=2000');
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
+      const res = await fetch('/api/songs?limit=5000');
+      const data = await res.json();
       if (res.ok && data.songs) {
         setSongs(data.songs);
       }
@@ -209,8 +223,7 @@ export default function HarvestAdminPage() {
   async function fetchReports() {
     try {
       const res = await fetch('/api/admin/reports');
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
+      const data = await res.json();
       if (res.ok && data.reports) {
         setReports(data.reports);
       }
@@ -224,8 +237,7 @@ export default function HarvestAdminPage() {
 
     try {
       const res = await fetch(`/api/admin/reports?song_id=${report.song_id}`, { method: 'DELETE' });
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
+      const data = await res.json();
 
       if (res.ok && data.success) {
         setLastMessage(`신고 곡 '${report.title}'이 DB에서 영구 삭제되었습니다.`);
@@ -246,8 +258,7 @@ export default function HarvestAdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ report_id: report.report_id }),
       });
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
+      const data = await res.json();
 
       if (res.ok && data.success) {
         setLastMessage(`'${report.title}' 신고를 반려 처리했습니다.`);
@@ -268,8 +279,7 @@ export default function HarvestAdminPage() {
 
     try {
       const res = await fetch('/api/songs/cleanup', { method: 'POST' });
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
+      const data = await res.json();
 
       if (res.ok && data.success) {
         const msg = data.message || `${data.deletedCount || 0}곡 정리 완료`;
@@ -292,8 +302,7 @@ export default function HarvestAdminPage() {
 
     try {
       const res = await fetch(`/api/songs?id=${song.id}`, { method: 'DELETE' });
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
+      const data = await res.json();
 
       if (res.ok && data.success) {
         setLastMessage(`'${song.title}' 곡이 삭제되었습니다.`);
@@ -325,8 +334,7 @@ export default function HarvestAdminPage() {
         body: JSON.stringify({ ids: Array.from(selectedSongIds) }),
       });
 
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
+      const data = await res.json();
 
       if (res.ok && data.success) {
         setLastMessage(`선택한 ${selectedSongIds.size}곡이 모두 삭제되었습니다.`);
@@ -365,7 +373,7 @@ export default function HarvestAdminPage() {
   async function handleAddTargetArtist(e: React.FormEvent) {
     e.preventDefault();
     if (!newArtistName.trim()) {
-      alert('밴드(아티스트) 이름을 입력해 주세요.');
+      alert('밴드 이름을 입력해 주세요.');
       return;
     }
 
@@ -381,11 +389,10 @@ export default function HarvestAdminPage() {
         }),
       });
 
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
+      const data = await res.json();
 
       if (res.ok && data.success) {
-        setLastMessage(`'${newArtistName}' 수집 큐 등록 완료 (LLM 자동 매칭)`);
+        setLastMessage(`'${newArtistName}' 수집 큐 등록 완료 (LLM 메타데이터 분석 반영)`);
         setNewArtistName('');
         setNewArtistPriority(1);
         setIsAddArtistOpen(false);
@@ -406,8 +413,7 @@ export default function HarvestAdminPage() {
 
     try {
       const res = await fetch(`/api/artists?id=${artist.id}`, { method: 'DELETE' });
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
+      const data = await res.json();
 
       if (res.ok && data.success) {
         setLastMessage(`'${artist.name}' 수집 대상에서 삭제 완료`);
@@ -425,17 +431,11 @@ export default function HarvestAdminPage() {
 
   async function handleTriggerNow() {
     setTriggering(true);
-    setLastMessage('다음 아티스트 곡 수집 및 실측 오디오 분석 중...');
+    setLastMessage('다음 아티스트 곡 수집 파이프라인 가동 중...');
 
     try {
       const res = await fetch('/api/songs/sync');
-      const text = await res.text();
-      let data: any = {};
-      try {
-        data = text ? JSON.parse(text) : {};
-      } catch {
-        throw new Error(`서버 응답 파싱 실패 (HTTP ${res.status})`);
-      }
+      const data = await res.json();
 
       if (res.ok && data.success) {
         const artist = data.lastExecution?.artist || '아티스트';
@@ -460,13 +460,7 @@ export default function HarvestAdminPage() {
 
     try {
       const res = await fetch('/api/songs/backfill-audio', { method: 'POST' });
-      const text = await res.text();
-      let data: any = {};
-      try {
-        data = text ? JSON.parse(text) : {};
-      } catch {
-        throw new Error(`백필 응답 파싱 실패 (HTTP ${res.status})`);
-      }
+      const data = await res.json();
 
       if (res.ok && data.success) {
         setLastMessage(`${data.updatedCount || 0}곡 분석 갱신됨 (남은 대상: ${data.remainingCount || 0}곡)`);
@@ -532,7 +526,7 @@ export default function HarvestAdminPage() {
     <main className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 lg:p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* 헤더 */}
+        {/* 상단 헤더 */}
         <header className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-slate-800 gap-4">
           <div>
             <div className="flex items-center gap-2.5">
@@ -602,7 +596,7 @@ export default function HarvestAdminPage() {
           </div>
         )}
 
-        {/* 핵심 통계 지표 카드 */}
+        {/* 5대 핵심 지표 카드 */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
             <span className="text-xs text-slate-400 block mb-1">총 수집 곡수</span>
@@ -718,7 +712,7 @@ export default function HarvestAdminPage() {
             </div>
           </div>
 
-          {/* 우측: 수집 음원 전수 조회 및 선택 삭제 패널 */}
+          {/* 우측: 수집 음원 전수 조회 및 일괄 삭제 */}
           <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div className="flex items-center gap-3">
@@ -862,7 +856,7 @@ export default function HarvestAdminPage() {
 
       </div>
 
-      {/* 신고된 음원 관리 모달 */}
+      {/* 신고된 곡 관리 모달 */}
       {isReportsOpen && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
@@ -945,7 +939,7 @@ export default function HarvestAdminPage() {
         </div>
       )}
 
-      {/* 수집 대상 밴드 등록 모달 */}
+      {/* 수집 대상 밴드 신규 등록 모달 */}
       {isAddArtistOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
@@ -973,11 +967,11 @@ export default function HarvestAdminPage() {
                   required
                   value={newArtistName}
                   onChange={(e) => setNewArtistName(e.target.value)}
-                  placeholder="예: 잔나비, 터치드, QWER..."
+                  placeholder="예: 검정치마, 소란, 루시, 데이식스..."
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-indigo-500"
                 />
                 <span className="text-[11px] text-slate-500 mt-1.5 block">
-                  💡 영문 표기 및 음원 검색용 별칭은 LLM이 자동으로 분석하여 매칭합니다.
+                  💡 영문 표기 및 음원 검색용 별칭은 LLM이 자동으로 매칭합니다.
                 </span>
               </div>
 
