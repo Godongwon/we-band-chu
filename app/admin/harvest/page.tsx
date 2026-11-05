@@ -21,7 +21,8 @@ import {
   Timer,
   ChevronLeft,
   ChevronRight,
-  Play
+  Play,
+  Inbox
 } from 'lucide-react';
 
 interface TargetArtist {
@@ -57,7 +58,17 @@ interface ReportedSong {
   original_key: string | null;
 }
 
-const REFRESH_INTERVAL_SECONDS = 300; // 5분(300초) 주기
+// 💡 제보 곡 데이터 구조
+interface SuggestionSong {
+  id: string;
+  title: string;
+  artist: string;
+  band_name: string;
+  youtube_url: string | null;
+  created_at: string;
+}
+
+const REFRESH_INTERVAL_SECONDS = 300;
 
 export default function HarvestAdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -69,7 +80,12 @@ export default function HarvestAdminPage() {
   const [reports, setReports] = useState<ReportedSong[]>([]);
   const [isReportsOpen, setIsReportsOpen] = useState<boolean>(false);
 
-  // 수집 대상 밴드 패널 접기/펼치기 (기본값: false로 접힘)
+  // 💡 [2단계] 제보받은 곡 모달 및 데이터 상태
+  const [suggestions, setSuggestions] = useState<SuggestionSong[]>([]);
+  const [isSuggestionsOpen, setIsSuggestionsOpen] = useState<boolean>(false);
+  const [harvestingSuggestionId, setHarvestingSuggestionId] = useState<string | null>(null);
+  const [previewHarvestData, setPreviewHarvestData] = useState<{ [id: string]: any }>({});
+
   const [isArtistPanelOpen, setIsArtistPanelOpen] = useState<boolean>(false);
 
   const [loading, setLoading] = useState<boolean>(false);
@@ -89,11 +105,9 @@ export default function HarvestAdminPage() {
   const [newArtistPriority, setNewArtistPriority] = useState<number>(1);
   const [addingArtist, setAddingArtist] = useState<boolean>(false);
 
-  // 카운트다운 타이머
   const [countdown, setCountdown] = useState<number>(REFRESH_INTERVAL_SECONDS);
   const [isAutoRefreshing, setIsAutoRefreshing] = useState<boolean>(false);
 
-  // 상단 지표 계산
   const stats = useMemo(() => {
     const totalSongs = songs.length;
     const totalArtists = artists.length;
@@ -143,20 +157,17 @@ export default function HarvestAdminPage() {
       setIsAuthenticated(true);
     }
   }, []);
-// app/admin/harvest/page.tsx 내 자동 갱신 함수 수정
-const refreshAllData = async () => {
-  setIsAutoRefreshing(true);
-  try {
-    await Promise.all([fetchArtists(), fetchSongs(), fetchReports()]);
-    
-    // 💡 미분석 곡이 남아있는 경우 백그라운드에서 1회 자동 백필 실행
-    fetch('/api/songs/backfill-audio', { method: 'POST' }).catch(() => {});
-  } catch (e) {
-    console.error('[자동 갱신 오류]:', e);
-  } finally {
-    setIsAutoRefreshing(false);
-  }
-};
+
+  const refreshAllData = async () => {
+    setIsAutoRefreshing(true);
+    try {
+      await Promise.all([fetchArtists(), fetchSongs(), fetchReports(), fetchSuggestions()]);
+    } catch (e) {
+      console.error('[자동 갱신 오류]:', e);
+    } finally {
+      setIsAutoRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -249,6 +260,94 @@ const refreshAllData = async () => {
       }
     } catch (err: any) {
       console.error('[관리자] 신고 목록 로드 실패:', err.message);
+    }
+  }
+
+  // 💡 제보 목록 조회
+  async function fetchSuggestions() {
+    try {
+      const res = await fetch('/api/songs/suggest');
+      const data = await res.json();
+      if (res.ok && data.suggestions) {
+        setSuggestions(data.suggestions);
+      }
+    } catch (err: any) {
+      console.error('[관리자] 제보 목록 로드 실패:', err.message);
+    }
+  }
+
+  // 💡 [4단계] 제보 곡 단일 우선수집 실행
+  async function handleHarvestSingleSuggestion(suggestion: SuggestionSong) {
+    setHarvestingSuggestionId(suggestion.id);
+    try {
+      const res = await fetch('/api/songs/suggest/harvest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'FETCH',
+          title: suggestion.title,
+          artist: suggestion.artist,
+          user_youtube_url: suggestion.youtube_url,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.previewSong) {
+        setPreviewHarvestData((prev) => ({ ...prev, [suggestion.id]: data.previewSong }));
+      } else {
+        alert(`수집 오류: ${data.message || '데이터를 가져오지 못했습니다.'}`);
+      }
+    } catch (err: any) {
+      alert(`수집 통신 실패: ${err.message}`);
+    } finally {
+      setHarvestingSuggestionId(null);
+    }
+  }
+
+  // 💡 [5 & 6단계] 결과 확인 후 최종 DB 추가 및 밴드 동기화
+  async function handleConfirmAddSuggestion(suggestion: SuggestionSong) {
+    const songData = previewHarvestData[suggestion.id];
+    if (!songData) return;
+
+    try {
+      const res = await fetch('/api/songs/suggest/harvest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CONFIRM',
+          suggestion_id: suggestion.id,
+          song_data: songData,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLastMessage(data.message);
+        setSuggestions((prev) => prev.filter((s) => s.id !== suggestion.id));
+        await fetchArtists();
+        await fetchSongs();
+      } else {
+        alert(`추가 실패: ${data.message}`);
+      }
+    } catch (err: any) {
+      alert(`처리 오류: ${err.message}`);
+    }
+  }
+
+  // 제보 반려
+  async function handleDismissSuggestion(suggestionId: string) {
+    if (!confirm('이 제보를 반려 처리하시겠습니까?')) return;
+    try {
+      const res = await fetch('/api/songs/suggest', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: suggestionId, status: 'REJECTED' }),
+      });
+      if (res.ok) {
+        setSuggestions((prev) => prev.filter((s) => s.id !== suggestionId));
+      }
+    } catch (err: any) {
+      alert(`반려 오류: ${err.message}`);
     }
   }
 
@@ -559,6 +658,21 @@ const refreshAllData = async () => {
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
+            {/* 💡 [2단계] 제보받은 곡 버튼 (대기 건수 뱃지) */}
+            <button
+              type="button"
+              onClick={() => setIsSuggestionsOpen(true)}
+              className="relative flex items-center gap-1.5 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/80 px-3 py-2 rounded-xl text-xs text-indigo-200 font-bold shadow transition"
+            >
+              <Inbox className="w-3.5 h-3.5 text-indigo-400" />
+              제보받은 곡
+              {suggestions.length > 0 && (
+                <span className="ml-1 px-1.5 py-0.2 bg-indigo-500 text-white rounded-full text-[10px] font-bold animate-pulse">
+                  {suggestions.length}
+                </span>
+              )}
+            </button>
+
             <button
               type="button"
               onClick={() => setIsReportsOpen(true)}
@@ -612,7 +726,7 @@ const refreshAllData = async () => {
           </div>
         )}
 
-        {/* 5대 핵심 지표 카드 + 실시간 카운트다운 타이머 */}
+        {/* 5대 핵심 지표 카드 */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
             <span className="text-xs text-slate-400 block mb-1">총 수집 곡수</span>
@@ -685,7 +799,7 @@ const refreshAllData = async () => {
           </div>
         </div>
 
-        {/* 메인 레이아웃 (접기/펼치기 및 수집완료 뱃지 연동) */}
+        {/* 메인 레이아웃 */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           
           {/* 좌측: 수집 대상 아티스트 큐 */}
@@ -950,6 +1064,122 @@ const refreshAllData = async () => {
 
       </div>
 
+      {/* 💡 [3~6단계] 제보받은 곡 관리 및 단일 우선 수집 모달 */}
+      {isSuggestionsOpen && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-base text-slate-100 flex items-center gap-2">
+                <Inbox className="w-4 h-4 text-indigo-400" />
+                클라이언트 제보 곡 관리 ({suggestions.length}건)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsSuggestionsOpen(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1 text-xs">
+              {suggestions.length === 0 ? (
+                <div className="p-12 text-center text-slate-500">대기 중인 제보 곡이 없습니다.</div>
+              ) : (
+                suggestions.map((suggestion) => {
+                  const preview = previewHarvestData[suggestion.id];
+                  const isHarvesting = harvestingSuggestionId === suggestion.id;
+
+                  return (
+                    <div
+                      key={suggestion.id}
+                      className="p-4 bg-slate-950/80 border border-slate-800 rounded-xl space-y-3"
+                    >
+                      {/* 3단계: 제보 정보 및 제보 밴드 뷰잉 */}
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-100 text-sm">{suggestion.title}</span>
+                            <span className="text-slate-400">({suggestion.artist})</span>
+                            <span className="px-2 py-0.5 rounded bg-indigo-950 border border-indigo-800 text-[10px] text-indigo-300 font-semibold">
+                              제보 밴드: {suggestion.band_name}
+                            </span>
+                          </div>
+                          <span className="text-slate-500 text-[10px] block mt-1">
+                            제보일시: {new Date(suggestion.created_at).toLocaleString()}
+                          </span>
+                        </div>
+
+                        {suggestion.youtube_url && (
+                          <a
+                            href={suggestion.youtube_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-950/60 border border-rose-800/80 text-rose-300 hover:bg-rose-900 transition text-[11px]"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            제보 영상 링크
+                          </a>
+                        )}
+                      </div>
+
+                      {/* 5단계: 수집 결과 미리보기 */}
+                      {preview && (
+                        <div className="p-3 bg-indigo-950/30 border border-indigo-900/60 rounded-lg flex items-center justify-between text-[11px]">
+                          <div>
+                            <span className="text-indigo-300 font-bold block">수집 데이터 확인:</span>
+                            <span className="text-slate-300">
+                              {preview.title} • {preview.artist} ({preview.genre})
+                            </span>
+                          </div>
+                          {preview.preview_url && (
+                            <audio controls src={preview.preview_url} className="h-6 w-48" />
+                          )}
+                        </div>
+                      )}
+
+                      {/* 액션 버튼 */}
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-900">
+                        <button
+                          type="button"
+                          onClick={() => handleDismissSuggestion(suggestion.id)}
+                          className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
+                        >
+                          반려
+                        </button>
+
+                        {/* 4단계: 우선 수집 버튼 */}
+                        {!preview ? (
+                          <button
+                            type="button"
+                            disabled={isHarvesting}
+                            onClick={() => handleHarvestSingleSuggestion(suggestion)}
+                            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold transition shadow"
+                          >
+                            <Sparkles className={`w-3.5 h-3.5 ${isHarvesting ? 'animate-spin' : ''}`} />
+                            {isHarvesting ? '정보 수집 중...' : '해당 곡 우선 수집'}
+                          </button>
+                        ) : (
+                          /* 5 & 6단계: DB 최종 추가 및 밴드 동기화 */
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmAddSuggestion(suggestion)}
+                            className="flex items-center gap-1 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            확인 후 DB 추가 (+밴드 등록)
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 신고된 곡 관리 모달 */}
       {isReportsOpen && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1064,9 +1294,6 @@ const refreshAllData = async () => {
                   placeholder="예: 검정치마, 소란, 루시, 데이식스..."
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-indigo-500"
                 />
-                <span className="text-[11px] text-slate-500 mt-1.5 block">
-                  💡 영문 표기 및 음원 검색용 별칭은 LLM이 자동으로 매칭합니다.
-                </span>
               </div>
 
               <div>

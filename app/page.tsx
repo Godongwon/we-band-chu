@@ -11,10 +11,10 @@ import {
   LogOut,
   X,
   Play,
-  FileText,
   Guitar,
   Sliders,
-  ExternalLink
+  ExternalLink,
+  Send
 } from 'lucide-react';
 
 interface SongItem {
@@ -32,7 +32,6 @@ interface SongItem {
 }
 
 export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
-  // 밴드 프로필 상태
   const [bandProfile, setBandProfile] = useState({
     name: currentBand?.name || '루시드 밴드',
     vocal_gender: currentBand?.vocal_gender || 'FEMALE',
@@ -57,10 +56,15 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
   const [loading, setLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // 곡 상세 정보 모달 State
   const [selectedSong, setSelectedSong] = useState<SongItem | null>(null);
 
-  // 추천곡 API 호출
+  // 제보 모달 상태
+  const [isSuggestOpen, setIsSuggestOpen] = useState<boolean>(false);
+  const [suggestTitle, setSuggestTitle] = useState<string>('');
+  const [suggestArtist, setSuggestArtist] = useState<string>('');
+  const [suggestYoutubeUrl, setSuggestYoutubeUrl] = useState<string>('');
+  const [isSubmittingSuggest, setIsSubmittingSuggest] = useState<boolean>(false);
+
   async function fetchRecommendations(tabKey: string = activeTab) {
     setLoading(true);
     try {
@@ -89,7 +93,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     fetchRecommendations(activeTab);
   }, [activeTab]);
 
-  // 신고 버튼 핸들러
   async function handleReportSong(song: SongItem) {
     const reason = prompt(
       `'${song.title} (${song.artist})' 곡을 신고하시겠습니까?\n사유를 입력해 주세요:`,
@@ -117,7 +120,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
         alert(`신고 저장 실패: ${data.message || '오류 발생'}`);
       }
     } catch (err: any) {
-      console.error('[클라] 신고 통신 에러:', err.message);
       alert(`신고 통신 에러: ${err.message}`);
     }
 
@@ -127,7 +129,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     setRecommendedSongs((prev) => prev.filter((s) => s.title !== song.title));
   }
 
-  // 레퍼토리 담기
   function handleAddToRepertoire(song: SongItem) {
     if (repertoire.some((r) => r.title === song.title)) {
       alert('이미 레퍼토리에 담긴 곡입니다.');
@@ -137,6 +138,44 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     setRecommendedSongs((prev) => prev.filter((s) => s.title !== song.title));
     if (selectedSong?.title === song.title) {
       setSelectedSong(null);
+    }
+  }
+
+  // 1단계: 클라이언트 곡 제보 핸들러
+  async function handleSubmitSuggestion(e: React.FormEvent) {
+    e.preventDefault();
+    if (!suggestTitle.trim() || !suggestArtist.trim()) {
+      alert('곡명과 아티스트명을 입력해 주세요.');
+      return;
+    }
+
+    setIsSubmittingSuggest(true);
+    try {
+      const res = await fetch('/api/songs/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: suggestTitle.trim(),
+          artist: suggestArtist.trim(),
+          band_name: bandProfile.name,
+          youtube_url: suggestYoutubeUrl.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert('소중한 합주곡 제보 감사합니다! 관리자 검토 및 수집 후 추천 리스트에 반영됩니다.');
+        setSuggestTitle('');
+        setSuggestArtist('');
+        setSuggestYoutubeUrl('');
+        setIsSuggestOpen(false);
+      } else {
+        alert(`제보 전송 실패: ${data.message || '오류 발생'}`);
+      }
+    } catch (err: any) {
+      alert(`통신 오류: ${err.message}`);
+    } finally {
+      setIsSubmittingSuggest(false);
     }
   }
 
@@ -169,9 +208,21 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
             </div>
           </div>
 
-          <button className="text-slate-500 hover:text-slate-300 p-1.5">
-            <LogOut className="w-4 h-4" />
-          </button>
+          {/* 노란 영역: 곡 제보하기 버튼 + 로그아웃 */}
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setIsSuggestOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-200 hover:text-white text-xs font-bold transition shadow-sm"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+              <span>곡 제보하기</span>
+            </button>
+
+            <button className="text-slate-500 hover:text-slate-300 p-1.5 transition">
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </header>
 
         {/* 곡 검색창 */}
@@ -312,7 +363,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
                     onClick={() => setSelectedSong(song)}
                     className="p-3.5 bg-[#0d1021]/80 hover:bg-[#111429] border border-slate-800/80 hover:border-slate-700/80 rounded-2xl flex items-center justify-between gap-3 text-xs transition shadow-sm cursor-pointer group"
                   >
-                    {/* 곡 메타 정보 */}
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-slate-100 text-sm truncate group-hover:text-indigo-300 transition">
@@ -331,7 +381,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
                         <span>{song.bpm}bpm</span>
                       </div>
 
-                      {/* 커버 영상 & 라이브 무대 바로가기 */}
                       <div className="flex items-center gap-3 pt-1 text-[11px]">
                         <a
                           href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${song.artist} ${song.title} 커버`)}`}
@@ -354,7 +403,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
                       </div>
                     </div>
 
-                    {/* 카드 내 버튼 액션 */}
                     <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
@@ -382,7 +430,100 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
 
       </div>
 
-      {/* 곡 상세 정보 & 파트별 유튜브 악보 연동 모달 */}
+      {/* 1단계: 곡 제보하기 팝업 모달 */}
+      {isSuggestOpen && (
+        <div 
+          className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setIsSuggestOpen(false)}
+        >
+          <div 
+            className="bg-[#0e1227] border border-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4 text-xs text-slate-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between border-b border-slate-800/80 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-400" />
+                  합주곡 제보하기
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  제보 밴드: <span className="text-indigo-300 font-bold">{bandProfile.name}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSuggestOpen(false)}
+                className="text-slate-400 hover:text-slate-100 p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitSuggestion} className="space-y-3.5">
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">
+                  곡명 <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={suggestTitle}
+                  onChange={(e) => setSuggestTitle(e.target.value)}
+                  placeholder="예: 사건의 지평선, 고민중독, 한 페이지가 될 수 있게"
+                  className="w-full bg-[#080a17] border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">
+                  아티스트 / 밴드명 <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={suggestArtist}
+                  onChange={(e) => setSuggestArtist(e.target.value)}
+                  placeholder="예: 윤하, QWER, DAY6, 실리카겔"
+                  className="w-full bg-[#080a17] border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">
+                  유튜브 링크 (선택)
+                </label>
+                <input
+                  type="url"
+                  value={suggestYoutubeUrl}
+                  onChange={(e) => setSuggestYoutubeUrl(e.target.value)}
+                  placeholder="예: https://youtu.be/... (비워두면 자동 매칭)"
+                  className="w-full bg-[#080a17] border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-800/80">
+                <button
+                  type="button"
+                  onClick={() => setIsSuggestOpen(false)}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingSuggest}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold transition shadow"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {isSubmittingSuggest ? '제보 접수 중...' : '제보하기'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 곡 상세 정보 & 파트별 유튜브 악보 모달 */}
       {selectedSong && (
         <div 
           className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
@@ -392,7 +533,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
             className="bg-[#0e1227] border border-slate-800 rounded-3xl w-full max-w-xl p-6 shadow-2xl space-y-5 text-xs text-slate-200"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* 팝업 헤더 */}
             <div className="flex items-start justify-between border-b border-slate-800/80 pb-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
@@ -414,7 +554,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
               </button>
             </div>
 
-            {/* BPM / 원곡 Key 및 추천 Key / 보컬 매칭 */}
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-[#121633] border border-slate-800/80 p-3 rounded-2xl text-center">
                 <span className="text-[10px] text-slate-400 block mb-0.5">템포 (BPM)</span>
@@ -438,7 +577,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
               </div>
             </div>
 
-            {/* 파트별 악보 및 연주 영상 (클릭 시 파트별 유튜브 악보 검색으로 이동) */}
+            {/* 파트별 악보 안내 */}
             <div className="space-y-2.5">
               <h4 className="font-bold text-slate-300 text-xs flex items-center gap-1.5">
                 <Sliders className="w-3.5 h-3.5 text-indigo-400" />
@@ -446,7 +585,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
               </h4>
 
               <div className="grid grid-cols-2 gap-2 text-[11px]">
-                {/* 일렉기타 */}
                 <a
                   href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${selectedSong.title} 기타 TAB 악보 cover`)}`}
                   target="_blank"
@@ -467,7 +605,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
                   </span>
                 </a>
 
-                {/* 베이스 */}
                 <a
                   href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${selectedSong.title} 베이스 악보 cover`)}`}
                   target="_blank"
@@ -486,7 +623,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
                   </span>
                 </a>
 
-                {/* 드럼 */}
                 <a
                   href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${selectedSong.title} 드럼 악보 cover`)}`}
                   target="_blank"
@@ -505,7 +641,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
                   </span>
                 </a>
 
-                {/* 건반 / 신디 */}
                 <a
                   href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${selectedSong.title} 피아노 건반 악보 cover`)}`}
                   target="_blank"
@@ -528,7 +663,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
               </div>
             </div>
 
-            {/* 원곡 및 라이브 외부 링크 */}
+            {/* 원곡/라이브 링크 */}
             <div className="p-3.5 bg-[#090c1d] border border-slate-800/80 rounded-2xl flex items-center justify-between gap-2">
               <span className="text-[11px] text-slate-400">원곡 및 라이브 풀버전:</span>
               <div className="flex items-center gap-2">
@@ -555,7 +690,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
               </div>
             </div>
 
-            {/* 모달 하단 버튼 액션 */}
             <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
               <button
                 type="button"
