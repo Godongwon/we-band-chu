@@ -95,8 +95,8 @@ export default function HarvestAdminPage() {
   const [isDeletingSelected, setIsDeletingSelected] = useState<boolean>(false);
   const [lastMessage, setLastMessage] = useState<string>('');
 
-  // 💡 [신규] LLM 분석 로딩 상태
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [updatingPriorityId, setUpdatingPriorityId] = useState<string | null>(null);
 
   const [selectedArtist, setSelectedArtist] = useState<string>('ALL');
   const [searchSongQuery, setSearchSongQuery] = useState<string>('');
@@ -279,7 +279,6 @@ export default function HarvestAdminPage() {
     }
   }
 
-  // 💡 [신규] LLM 분석 핸들러
   async function handleRefreshWithLLM(e: React.MouseEvent, artist: TargetArtist) {
     e.stopPropagation();
     if (!confirm(`'${artist.name}' 밴드의 검색 키워드(search_alias)와 보컬 성별을 LLM으로 분석할까요?`)) {
@@ -305,6 +304,31 @@ export default function HarvestAdminPage() {
       alert(`통신 오류: ${err.message}`);
     } finally {
       setRefreshingId(null);
+    }
+  }
+
+  // 💡 [신규] 우선순위(Priority) 드롭다운 변경 핸들러
+  async function handleUpdatePriority(artistId: string, newPriority: number) {
+    setUpdatingPriorityId(artistId);
+    try {
+      const res = await fetch('/api/artists/priority', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: artistId, priority: newPriority }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setArtists((prev) =>
+          prev.map((a) => (a.id === artistId ? { ...a, priority: newPriority } : a))
+        );
+      } else {
+        alert(`순위 변경 실패: ${data.message || '오류 발생'}`);
+      }
+    } catch (err: any) {
+      alert(`통신 오류: ${err.message}`);
+    } finally {
+      setUpdatingPriorityId(null);
     }
   }
 
@@ -876,8 +900,8 @@ export default function HarvestAdminPage() {
                   .sort((a, b) => a.priority - b.priority)
                   .map((artist) => {
                     const isSelected = selectedArtist === artist.name;
-                    const isHarvestCompleted = artist.priority === 3 && !!artist.last_harvested_at;
                     const isAnalyzing = refreshingId === artist.id;
+                    const isUpdatingPriority = updatingPriorityId === artist.id;
 
                     return (
                       <div
@@ -886,13 +910,13 @@ export default function HarvestAdminPage() {
                         className={`p-2.5 rounded-xl border text-xs cursor-pointer transition flex items-center justify-between group ${
                           isSelected 
                             ? 'bg-indigo-950/70 border-indigo-700 text-indigo-200' 
-                            : isHarvestCompleted
+                            : artist.priority === 3
                             ? 'bg-slate-950/30 border-slate-900 text-slate-400'
                             : 'bg-slate-950/50 border-slate-800/80 hover:border-slate-700 text-slate-300'
                         }`}
                       >
                         <div className="min-w-0 flex-1 pr-2">
-                          <span className={`font-bold block truncate ${isHarvestCompleted ? 'text-slate-400' : 'text-slate-200'}`}>
+                          <span className={`font-bold block truncate ${artist.priority === 3 ? 'text-slate-400' : 'text-slate-200'}`}>
                             {artist.name}
                           </span>
                           <span className="text-[10px] text-slate-500 block truncate">
@@ -902,8 +926,8 @@ export default function HarvestAdminPage() {
                           </span>
                         </div>
 
-                        {/* 💡 [수정] 노란색 영역에 LLM 분석 버튼 삽입 완료 */}
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        {/* 우측 액션 그룹: [LLM 분석] + [우선순위 드롭다운] + [휴지통] */}
+                        <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                           <button
                             type="button"
                             disabled={isAnalyzing}
@@ -915,19 +939,23 @@ export default function HarvestAdminPage() {
                             <span>{isAnalyzing ? '분석 중...' : 'LLM 분석'}</span>
                           </button>
 
-                          {isHarvestCompleted ? (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800 font-semibold flex items-center gap-0.5">
-                              <Check className="w-2.5 h-2.5" /> 수집완료
-                            </span>
-                          ) : (
-                            <span className={`text-[10px] px-2 py-0.5 rounded border font-medium ${
-                              artist.priority === 1 
-                                ? 'bg-indigo-950 text-indigo-300 border-indigo-800' 
-                                : 'bg-slate-900 text-slate-400 border-slate-800'
-                            }`}>
-                              {artist.priority}순위
-                            </span>
-                          )}
+                          {/* 💡 [수정] 순위 변경 드롭다운 (클릭 시 DB 즉시 업데이트) */}
+                          <select
+                            value={artist.priority}
+                            disabled={isUpdatingPriority}
+                            onChange={(e) => handleUpdatePriority(artist.id, Number(e.target.value))}
+                            className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold outline-none cursor-pointer transition ${
+                              artist.priority === 1
+                                ? 'bg-indigo-950 text-indigo-300 border-indigo-800 hover:bg-indigo-900'
+                                : artist.priority === 2
+                                ? 'bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800'
+                                : 'bg-emerald-950/80 text-emerald-300 border-emerald-800 hover:bg-emerald-900'
+                            } disabled:opacity-50`}
+                          >
+                            <option value={1} className="bg-slate-900 text-indigo-300">1순위 (최우선)</option>
+                            <option value={2} className="bg-slate-900 text-slate-300">2순위 (일반)</option>
+                            <option value={3} className="bg-slate-900 text-emerald-300">3순위 (수집완료)</option>
+                          </select>
 
                           <button
                             type="button"
@@ -1287,9 +1315,9 @@ export default function HarvestAdminPage() {
                           href={report.youtube_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-950/60 border border-rose-800/80 text-rose-300 hover:bg-rose-900 transition shrink-0"
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-rose-950/60 border border-rose-800/80 text-rose-300 hover:bg-rose-900 transition shrink-0"
                         >
-                          <ExternalLink className="w-3 h-3" />
+                          <ExternalLink className="w-3.5 h-3.5" />
                           YouTube 확인
                         </a>
                       ) : (
