@@ -86,9 +86,8 @@ export default function HarvestAdminPage() {
   const [harvestingSuggestionId, setHarvestingSuggestionId] = useState<string | null>(null);
   const [previewHarvestData, setPreviewHarvestData] = useState<{ [id: string]: any }>({});
 
-  // 💡 패널 접기/펼치기 상태 관리
-  const [isArtistPanelOpen, setIsArtistPanelOpen] = useState<boolean>(false); // 밴드 패널 (기본 접힘)
-  const [isSongPanelOpen, setIsSongPanelOpen] = useState<boolean>(true);      // 수집 음원 패널 (기본 펼침)
+  const [isArtistPanelOpen, setIsArtistPanelOpen] = useState<boolean>(false);
+  const [isSongPanelOpen, setIsSongPanelOpen] = useState<boolean>(true);
 
   const [loading, setLoading] = useState<boolean>(false);
   const [triggering, setTriggering] = useState<boolean>(false);
@@ -642,10 +641,10 @@ export default function HarvestAdminPage() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 lg:p-8 font-sans">
-      <div className="max-w-7xl mx-auto space-y-6">
+      <div className="max-w-7xl mx-auto space-y-5">
         
-        {/* 상단 헤더 */}
-        <header className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-slate-800 gap-4">
+        {/* 상단 간소화된 헤더 */}
+        <header className="flex items-center justify-between pb-3 border-b border-slate-800/80">
           <div className="flex items-center gap-1.5">
             <span className="text-xl font-black bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-400 bg-clip-text text-transparent">
               We.Band.Chu
@@ -654,66 +653,7 @@ export default function HarvestAdminPage() {
               우밴추(Admin)
             </span>
           </div>
-
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <button
-              type="button"
-              onClick={() => setIsSuggestionsOpen(true)}
-              className="relative flex items-center gap-1.5 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/80 px-3 py-2 rounded-xl text-xs text-indigo-200 font-bold shadow transition"
-            >
-              <Inbox className="w-3.5 h-3.5 text-indigo-400" />
-              제보받은 곡
-              {suggestions.length > 0 && (
-                <span className="ml-1 px-1.5 py-0.2 bg-indigo-500 text-white rounded-full text-[10px] font-bold animate-pulse">
-                  {suggestions.length}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsReportsOpen(true)}
-              className="relative flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-amber-700/80 px-3 py-2 rounded-xl text-xs text-amber-300 font-semibold shadow transition"
-            >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              신고된 곡 관리
-              {reports.length > 0 && (
-                <span className="ml-1 px-1.5 py-0.2 bg-amber-500 text-slate-950 rounded-full text-[10px] font-bold">
-                  {reports.length}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              disabled={isCleaning}
-              onClick={handleCleanupNonBand}
-              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-rose-800/80 px-3 py-2 rounded-xl text-xs text-rose-300 font-semibold shadow transition disabled:opacity-50"
-            >
-              <ShieldAlert className={`w-3.5 h-3.5 ${isCleaning ? 'animate-spin' : ''}`} />
-              비밴드 음원 정리
-            </button>
-
-            <button
-              type="button"
-              disabled={isBackfilling}
-              onClick={handleBackfillAudio}
-              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-purple-800/80 px-3.5 py-2 rounded-xl text-xs text-purple-300 font-semibold shadow transition disabled:opacity-50"
-            >
-              <Sparkles className={`w-3.5 h-3.5 ${isBackfilling ? 'animate-spin' : ''}`} />
-              기존곡 오디오 백필
-            </button>
-
-            <button
-              type="button"
-              disabled={triggering}
-              onClick={handleTriggerNow}
-              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 rounded-xl text-xs font-bold text-white shadow transition"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${triggering ? 'animate-spin' : ''}`} />
-              다음 밴드 즉시 수집
-            </button>
-          </div>
+          <span className="text-[11px] text-slate-500">음원 파이프라인 관리 모니터링</span>
         </header>
 
         {lastMessage && (
@@ -723,7 +663,68 @@ export default function HarvestAdminPage() {
           </div>
         )}
 
-        {/* 5대 핵심 지표 카드 */}
+        {/* 💡 [신규] 지표 카드 바로 위 1열 액션 툴바 */}
+        <div className="flex items-center justify-start gap-2.5 flex-wrap bg-slate-900/40 border border-slate-800/60 p-2.5 rounded-2xl">
+          <button
+            type="button"
+            onClick={() => setIsSuggestionsOpen(true)}
+            className="relative flex items-center gap-1.5 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/80 px-3.5 py-2 rounded-xl text-xs text-indigo-200 font-bold shadow transition shrink-0"
+          >
+            <Inbox className="w-3.5 h-3.5 text-indigo-400" />
+            제보받은 곡
+            {suggestions.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.2 bg-indigo-500 text-white rounded-full text-[10px] font-bold animate-pulse">
+                {suggestions.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsReportsOpen(true)}
+            className="relative flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-amber-700/80 px-3.5 py-2 rounded-xl text-xs text-amber-300 font-semibold shadow transition shrink-0"
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            신고된 곡 관리
+            {reports.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.2 bg-amber-500 text-slate-950 rounded-full text-[10px] font-bold">
+                {reports.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            disabled={isCleaning}
+            onClick={handleCleanupNonBand}
+            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-rose-800/80 px-3.5 py-2 rounded-xl text-xs text-rose-300 font-semibold shadow transition disabled:opacity-50 shrink-0"
+          >
+            <ShieldAlert className={`w-3.5 h-3.5 ${isCleaning ? 'animate-spin' : ''}`} />
+            비밴드 음원 정리
+          </button>
+
+          <button
+            type="button"
+            disabled={isBackfilling}
+            onClick={handleBackfillAudio}
+            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-purple-800/80 px-3.5 py-2 rounded-xl text-xs text-purple-300 font-semibold shadow transition disabled:opacity-50 shrink-0"
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${isBackfilling ? 'animate-spin' : ''}`} />
+            기존곡 오디오 백필
+          </button>
+
+          <button
+            type="button"
+            disabled={triggering}
+            onClick={handleTriggerNow}
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 rounded-xl text-xs font-bold text-white shadow transition shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${triggering ? 'animate-spin' : ''}`} />
+            다음 밴드 즉시 수집
+          </button>
+        </div>
+
+        {/* 5대 핵심 지표 카드 + 실시간 카운트다운 타이머 */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
             <span className="text-xs text-slate-400 block mb-1">총 수집 곡수</span>
@@ -796,7 +797,7 @@ export default function HarvestAdminPage() {
           </div>
         </div>
 
-        {/* 메인 레이아웃 (밴드 패널 + 수집 음원 패널 모두 접기/펼치기 가능) */}
+        {/* 메인 레이아웃 (밴드 패널 + 수집 음원 패널) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           
           {/* 좌측: 수집 대상 밴드 패널 */}
@@ -916,9 +917,8 @@ export default function HarvestAdminPage() {
             </div>
           )}
 
-          {/* 우측: 수집 음원 패널 (접기/펼치기 가능) */}
+          {/* 우측: 수집 음원 패널 */}
           <div className={`${isArtistPanelOpen ? 'lg:col-span-2' : 'lg:col-span-3'} bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3 transition-all`}>
-            {/* 수집 음원 헤더 바 (접기/펼치기 버튼 포함) */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-800/60 pb-3">
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5">
@@ -950,7 +950,6 @@ export default function HarvestAdminPage() {
                 )}
               </div>
 
-              {/* 펼쳐져 있을 때만 검색창 및 전체선택 노출 */}
               {isSongPanelOpen && (
                 <div className="flex items-center gap-2">
                   {filteredSongs.length > 0 && (
@@ -978,7 +977,6 @@ export default function HarvestAdminPage() {
               )}
             </div>
 
-            {/* 수집 음원 본체 (isSongPanelOpen === true 일 때만 렌더링) */}
             {isSongPanelOpen ? (
               loading ? (
                 <div className="p-12 text-center text-slate-500 text-xs">음원 데이터 로드 중...</div>
@@ -1073,7 +1071,6 @@ export default function HarvestAdminPage() {
                 </div>
               )
             ) : (
-              /* 음원 목록이 접혔을 때 표시되는 축약 바 */
               <div 
                 onClick={() => setIsSongPanelOpen(true)}
                 className="py-3 px-4 rounded-xl bg-slate-950/50 hover:bg-slate-900 border border-slate-800 text-center text-xs text-slate-400 cursor-pointer transition flex items-center justify-center gap-1.5"

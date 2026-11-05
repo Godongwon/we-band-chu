@@ -14,7 +14,8 @@ import {
   Guitar,
   Sliders,
   ExternalLink,
-  Send
+  Send,
+  Users
 } from 'lucide-react';
 
 interface SongItem {
@@ -32,6 +33,7 @@ interface SongItem {
 }
 
 export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
+  // 밴드 프로필 상태
   const [bandProfile, setBandProfile] = useState({
     name: currentBand?.name || '루시드 밴드',
     vocal_gender: currentBand?.vocal_gender || 'FEMALE',
@@ -56,15 +58,17 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
   const [loading, setLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
+  // 곡 상세 정보 모달 State
   const [selectedSong, setSelectedSong] = useState<SongItem | null>(null);
 
-  // 제보 모달 상태
+  // 제보 모달 State
   const [isSuggestOpen, setIsSuggestOpen] = useState<boolean>(false);
   const [suggestTitle, setSuggestTitle] = useState<string>('');
   const [suggestArtist, setSuggestArtist] = useState<string>('');
   const [suggestYoutubeUrl, setSuggestYoutubeUrl] = useState<string>('');
   const [isSubmittingSuggest, setIsSubmittingSuggest] = useState<boolean>(false);
 
+  // 추천곡 API 호출
   async function fetchRecommendations(tabKey: string = activeTab) {
     setLoading(true);
     try {
@@ -93,6 +97,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     fetchRecommendations(activeTab);
   }, [activeTab]);
 
+  // 신고 버튼 핸들러
   async function handleReportSong(song: SongItem) {
     const reason = prompt(
       `'${song.title} (${song.artist})' 곡을 신고하시겠습니까?\n사유를 입력해 주세요:`,
@@ -129,6 +134,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     setRecommendedSongs((prev) => prev.filter((s) => s.title !== song.title));
   }
 
+  // 레퍼토리 담기
   function handleAddToRepertoire(song: SongItem) {
     if (repertoire.some((r) => r.title === song.title)) {
       alert('이미 레퍼토리에 담긴 곡입니다.');
@@ -141,7 +147,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     }
   }
 
-  // 1단계: 클라이언트 곡 제보 핸들러
+  // 곡 제보 전송 핸들러
   async function handleSubmitSuggestion(e: React.FormEvent) {
     e.preventDefault();
     if (!suggestTitle.trim() || !suggestArtist.trim()) {
@@ -181,49 +187,58 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
 
   return (
     <main className="min-h-screen bg-[#070913] text-slate-100 p-4 sm:p-6 font-sans">
-      <div className="max-w-7xl mx-auto space-y-6">
+      <div className="max-w-7xl mx-auto space-y-4">
         
-        {/* 상단 헤더 */}
-        <header className="flex items-center justify-between pb-4 border-b border-slate-900">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xl font-black bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-400 bg-clip-text text-transparent">
-                We.Band.Chu
-              </span>
-              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
-                우밴추
-              </span>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-slate-400 pl-4 border-l border-slate-800">
-              <span className="font-bold text-slate-200">{bandProfile.name}</span>
-              <span>•</span>
-              <span>{bandProfile.vocal_gender === 'FEMALE' ? '여성 보컬' : '남성 보컬'}</span>
-              <span>•</span>
-              <span>{bandProfile.guitar_count}기타</span>
-              <span>•</span>
-              <span>{bandProfile.has_keys ? '건반 O' : '건반 X'}</span>
-              <button className="text-[10px] px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200">
-                구성 수정
-              </button>
-            </div>
+        {/* 상단 미니멀 헤더 */}
+        <header className="flex items-center justify-between pb-3 border-b border-slate-900">
+          <div className="flex items-center gap-2">
+            <span className="text-xl font-black bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-400 bg-clip-text text-transparent">
+              We.Band.Chu
+            </span>
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
+              우밴추
+            </span>
           </div>
 
-          {/* 노란 영역: 곡 제보하기 버튼 + 로그아웃 */}
-          <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={() => setIsSuggestOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-200 hover:text-white text-xs font-bold transition shadow-sm"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-              <span>곡 제보하기</span>
-            </button>
-
-            <button className="text-slate-500 hover:text-slate-300 p-1.5 transition">
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
+          <button className="text-slate-500 hover:text-slate-300 p-1.5 transition">
+            <LogOut className="w-4 h-4" />
+          </button>
         </header>
+
+        {/* 💡 [신규] 검색창 상단 독립 밴드 프로필 & 액션 툴바 */}
+        <div className="bg-[#0b0e20]/80 border border-slate-800/80 rounded-2xl p-3 sm:px-4 sm:py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+          {/* 밴드 프로필 정보 뱃지 그룹 */}
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-950/70 border border-indigo-800/80 text-indigo-200 font-bold">
+              <Users className="w-3.5 h-3.5 text-indigo-400" />
+              <span>{bandProfile.name}</span>
+            </div>
+            <span className="text-slate-600 hidden sm:inline">•</span>
+            <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
+              {bandProfile.vocal_gender === 'FEMALE' ? '여성 보컬' : '남성 보컬'}
+            </span>
+            <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
+              {bandProfile.guitar_count}기타
+            </span>
+            <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
+              {bandProfile.has_keys ? '건반 O' : '건반 X'}
+            </span>
+
+            <button className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-700/80 text-slate-300 hover:text-white hover:border-slate-600 transition">
+              구성 수정
+            </button>
+          </div>
+
+          {/* 우측: 곡 제보하기 버튼 */}
+          <button
+            type="button"
+            onClick={() => setIsSuggestOpen(true)}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold transition shadow"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>곡 제보하기</span>
+          </button>
+        </div>
 
         {/* 곡 검색창 */}
         <div className="relative">
@@ -238,7 +253,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
         </div>
 
         {/* 2열 메인 컨텐츠 */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start pt-1">
           
           {/* 좌측: 우리 밴드 레퍼토리 */}
           <div className="bg-[#0b0e1e]/60 border border-slate-800/60 rounded-2xl p-5 space-y-4">
@@ -430,7 +445,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
 
       </div>
 
-      {/* 1단계: 곡 제보하기 팝업 모달 */}
+      {/* 곡 제보하기 팝업 모달 */}
       {isSuggestOpen && (
         <div 
           className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
@@ -577,7 +592,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
               </div>
             </div>
 
-            {/* 파트별 악보 안내 */}
             <div className="space-y-2.5">
               <h4 className="font-bold text-slate-300 text-xs flex items-center gap-1.5">
                 <Sliders className="w-3.5 h-3.5 text-indigo-400" />
@@ -663,7 +677,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
               </div>
             </div>
 
-            {/* 원곡/라이브 링크 */}
             <div className="p-3.5 bg-[#090c1d] border border-slate-800/80 rounded-2xl flex items-center justify-between gap-2">
               <span className="text-[11px] text-slate-400">원곡 및 라이브 풀버전:</span>
               <div className="flex items-center gap-2">
