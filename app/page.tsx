@@ -309,29 +309,26 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
                         <span>{song.bpm}bpm</span>
                       </div>
 
-                      {/* 커버 영상 및 라이브 무대 유튜브 링크 연동 버튼 */}
-                      <div className="flex items-center gap-3 pt-1 text-[11px]">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const query = `${song.artist} ${song.title} 밴드 커버`;
-                            window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, '_blank');
-                          }}
-                          className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
-                        >
-                          🎯 커버 영상
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const query = `${song.artist} ${song.title} 라이브`;
-                            window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, '_blank');
-                          }}
-                          className="text-slate-400 hover:text-slate-200 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
-                        >
-                          📺 라이브 무대
-                        </button>
-                      </div>
+                     <div className="flex items-center gap-3 pt-1 text-[11px]">
+  <a
+    href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${song.artist} ${song.title} 커버`)}`}
+    target="_blank"
+    rel="noopener noreferrer"
+    onClick={(e) => e.stopPropagation()}
+    className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
+  >
+    🎯 커버 영상
+  </a>
+  <a
+    href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${song.artist} ${song.title} 라이브`)}`}
+    target="_blank"
+    rel="noopener noreferrer"
+    onClick={(e) => e.stopPropagation()}
+    className="text-slate-400 hover:text-slate-200 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
+  >
+    📺 라이브 무대
+  </a>
+</div>
                     </div>
 
                     {/* 액션 버튼 (+ 담기 / ! 신고) */}
