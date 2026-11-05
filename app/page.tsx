@@ -71,7 +71,7 @@ export default function LoginPage() {
             </span>
           </div>
           <p className="text-xs text-slate-400">
-            여성 보컬 중심 밴드 합주곡 큐레이션 & 워크스페이스
+             밴드 합주곡 큐레이션 & 워크스페이스
           </p>
         </div>
 
