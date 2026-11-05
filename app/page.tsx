@@ -15,7 +15,9 @@ import {
   Sliders,
   ExternalLink,
   Send,
-  Users
+  Users,
+  Settings2,
+  Check
 } from 'lucide-react';
 
 interface SongItem {
@@ -52,6 +54,13 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     }
   }, [currentBand]);
 
+  // 💡 [신규] 구성 수정 모달 State
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState<boolean>(false);
+  const [editName, setEditName] = useState<string>(bandProfile.name);
+  const [editVocalGender, setEditVocalGender] = useState<string>(bandProfile.vocal_gender);
+  const [editGuitarCount, setEditGuitarCount] = useState<number>(bandProfile.guitar_count);
+  const [editHasKeys, setEditHasKeys] = useState<boolean>(bandProfile.has_keys);
+
   const [activeTab, setActiveTab] = useState<string>('HIGH_TENSION');
   const [recommendedSongs, setRecommendedSongs] = useState<SongItem[]>([]);
   const [repertoire, setRepertoire] = useState<SongItem[]>([]);
@@ -69,7 +78,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
   const [isSubmittingSuggest, setIsSubmittingSuggest] = useState<boolean>(false);
 
   // 추천곡 API 호출
-  async function fetchRecommendations(tabKey: string = activeTab) {
+  async function fetchRecommendations(tabKey: string = activeTab, profile = bandProfile) {
     setLoading(true);
     try {
       const res = await fetch('/api/recommend', {
@@ -77,7 +86,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           category: tabKey,
-          bandProfile: bandProfile,
+          bandProfile: profile,
           excludeTitles: repertoire.map((r) => r.title),
         }),
       });
@@ -96,6 +105,37 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
   useEffect(() => {
     fetchRecommendations(activeTab);
   }, [activeTab]);
+
+  // 구성 수정 모달 열릴 때 현재 상태 동기화
+  function handleOpenEditProfile() {
+    setEditName(bandProfile.name);
+    setEditVocalGender(bandProfile.vocal_gender);
+    setEditGuitarCount(bandProfile.guitar_count);
+    setEditHasKeys(bandProfile.has_keys);
+    setIsEditProfileOpen(true);
+  }
+
+  // 구성 수정 저장 핸들러
+  function handleSaveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editName.trim()) {
+      alert('밴드명을 입력해 주세요.');
+      return;
+    }
+
+    const updatedProfile = {
+      name: editName.trim(),
+      vocal_gender: editVocalGender,
+      guitar_count: Number(editGuitarCount),
+      has_keys: Boolean(editHasKeys),
+    };
+
+    setBandProfile(updatedProfile);
+    setIsEditProfileOpen(false);
+
+    // 변경된 세션 구성에 맞춰 추천곡 다시 호출
+    fetchRecommendations(activeTab, updatedProfile);
+  }
 
   // 신고 버튼 핸들러
   async function handleReportSong(song: SongItem) {
@@ -205,7 +245,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
           </button>
         </header>
 
-        {/* 💡 [신규] 검색창 상단 독립 밴드 프로필 & 액션 툴바 */}
+        {/* 밴드 프로필 & 액션 툴바 */}
         <div className="bg-[#0b0e20]/80 border border-slate-800/80 rounded-2xl p-3 sm:px-4 sm:py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
           {/* 밴드 프로필 정보 뱃지 그룹 */}
           <div className="flex items-center gap-2 flex-wrap text-xs">
@@ -224,8 +264,14 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
               {bandProfile.has_keys ? '건반 O' : '건반 X'}
             </span>
 
-            <button className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-700/80 text-slate-300 hover:text-white hover:border-slate-600 transition">
-              구성 수정
+            {/* 💡 [연결 완료] 구성 수정 버튼 */}
+            <button 
+              type="button"
+              onClick={handleOpenEditProfile}
+              className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-700/80 text-slate-300 hover:text-white hover:border-indigo-500 hover:bg-slate-800 transition flex items-center gap-1"
+            >
+              <Settings2 className="w-3 h-3 text-indigo-400" />
+              <span>구성 수정</span>
             </button>
           </div>
 
@@ -444,6 +490,159 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
         </div>
 
       </div>
+
+      {/* 💡 [신규 구현] 밴드 구성 수정 모달 */}
+      {isEditProfileOpen && (
+        <div 
+          className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setIsEditProfileOpen(false)}
+        >
+          <div 
+            className="bg-[#0e1227] border border-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4 text-xs text-slate-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between border-b border-slate-800/80 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                  <Settings2 className="w-4 h-4 text-indigo-400" />
+                  밴드 구성 수정
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  밴드 사운드 및 추천 알고리즘에 적용될 세션 구성 정보를 변경합니다.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditProfileOpen(false)}
+                className="text-slate-400 hover:text-slate-100 p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProfile} className="space-y-4">
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">밴드 이름</label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="밴드명을 입력하세요"
+                  className="w-full bg-[#080a17] border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1.5">메인 보컬 음역/성별</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditVocalGender('FEMALE')}
+                    className={`py-2 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                      editVocalGender === 'FEMALE'
+                        ? 'bg-pink-950/70 border-pink-700 text-pink-300 shadow'
+                        : 'bg-[#080a17] border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {editVocalGender === 'FEMALE' && <Check className="w-3.5 h-3.5" />}
+                    여성 보컬
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditVocalGender('MALE')}
+                    className={`py-2 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                      editVocalGender === 'MALE'
+                        ? 'bg-blue-950/70 border-blue-700 text-blue-300 shadow'
+                        : 'bg-[#080a17] border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {editVocalGender === 'MALE' && <Check className="w-3.5 h-3.5" />}
+                    남성 보컬
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1.5">일렉기타 세션 수</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditGuitarCount(1)}
+                    className={`py-2 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                      editGuitarCount === 1
+                        ? 'bg-indigo-950/80 border-indigo-700 text-indigo-300 shadow'
+                        : 'bg-[#080a17] border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {editGuitarCount === 1 && <Check className="w-3.5 h-3.5" />}
+                    1기타 (원기타)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditGuitarCount(2)}
+                    className={`py-2 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                      editGuitarCount === 2
+                        ? 'bg-indigo-950/80 border-indigo-700 text-indigo-300 shadow'
+                        : 'bg-[#080a17] border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {editGuitarCount === 2 && <Check className="w-3.5 h-3.5" />}
+                    2기타 (리드/리듬)
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1.5">키보드 / 건반 세션</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditHasKeys(true)}
+                    className={`py-2 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                      editHasKeys
+                        ? 'bg-purple-950/80 border-purple-700 text-purple-300 shadow'
+                        : 'bg-[#080a17] border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {editHasKeys && <Check className="w-3.5 h-3.5" />}
+                    건반 있음 (신디/피아노)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditHasKeys(false)}
+                    className={`py-2 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                      !editHasKeys
+                        ? 'bg-slate-900 border-slate-700 text-slate-200 shadow'
+                        : 'bg-[#080a17] border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {!editHasKeys && <Check className="w-3.5 h-3.5" />}
+                    건반 없음
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-800/80">
+                <button
+                  type="button"
+                  onClick={() => setIsEditProfileOpen(false)}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition shadow flex items-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  설정 저장
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* 곡 제보하기 팝업 모달 */}
       {isSuggestOpen && (
