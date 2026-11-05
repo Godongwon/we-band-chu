@@ -46,7 +46,7 @@ export async function GET() {
       const genreLower = (track.primaryGenreName || '').toLowerCase();
 
       // (1) 부적합 장르 배제
-      if (['classical', 'dance', 'electronic', 'hip-hop/rap', 'children\'s music'].includes(genreLower)) {
+      if (['classical', 'dance', 'electronic', 'hip-hop/rap', "children's music"].includes(genreLower)) {
         return false;
       }
 
@@ -54,7 +54,7 @@ export async function GET() {
       const hasBlacklist = EXCLUDE_KEYWORDS.some((kw) => titleLower.includes(kw));
       if (hasBlacklist) return false;
 
-      // (3) 30초 오디오 미리듣기 프리뷰가 있어야 BPM/Key 분석 가능
+      // (3) 30초 오디오 미리듣기 프리뷰 유무 확인
       return !!track.previewUrl;
     });
 
@@ -72,7 +72,6 @@ export async function GET() {
       const cleanTitle = track.trackName.trim();
       if (existingTitles.has(cleanTitle.toLowerCase())) continue;
 
-      // 더미/실측 데이터 산출 (기본값 구성 및 YouTube 검색 링크 생성)
       const youtubeUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(`${currentArtist.name} ${cleanTitle}`)}`;
 
       newSongsToInsert.push({
@@ -83,7 +82,7 @@ export async function GET() {
         youtube_url: youtubeUrl,
         live_url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${currentArtist.name} ${cleanTitle} 라이브`)}`,
         cover_url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${currentArtist.name} ${cleanTitle} 밴드 커버`)}`,
-        bpm: null, // 백필 또는 분석 워커에서 실측
+        bpm: null,
         original_key: null,
       });
 
@@ -102,16 +101,22 @@ export async function GET() {
       insertedCount = newSongsToInsert.length;
     }
 
-    // 6. 💡 핵심: 대상 아티스트의 last_harvested_at을 현재 UTC 시간으로 반드시 업데이트
+    // 6. 대상 아티스트 업데이트 (타임스탬프 갱신 및 신규곡 0건일 시 3순위 강등)
     const nowIso = new Date().toISOString();
+    const updatePayload: any = { last_harvested_at: nowIso };
+
+    if (insertedCount === 0) {
+      updatePayload.priority = 3; // 수집 완료 팀은 3순위로 강등하여 수집완료 뱃지 부여
+    }
+
     await supabase
       .from('target_artists')
-      .update({ last_harvested_at: nowIso })
+      .update(updatePayload)
       .eq('id', currentArtist.id);
 
     return NextResponse.json({
       success: true,
-      message: `${currentArtist.name} 수집 완료 (${insertedCount}곡 추가)`,
+      message: `${currentArtist.name} 수집 완료 (${insertedCount}곡 추가${insertedCount === 0 ? ' - 전곡 수집 완료로 3순위 강등' : ''})`,
       lastExecution: {
         artist: currentArtist.name,
         count: insertedCount,
