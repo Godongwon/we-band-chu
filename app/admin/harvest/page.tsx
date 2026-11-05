@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { 
   Database, 
   RefreshCw, 
@@ -18,7 +18,8 @@ import {
   CheckSquare,
   Square,
   AlertTriangle,
-  Check
+  Check,
+  Timer
 } from 'lucide-react';
 
 interface TargetArtist {
@@ -54,6 +55,8 @@ interface ReportedSong {
   original_key: string | null;
 }
 
+const REFRESH_INTERVAL_SECONDS = 300; // 5분(300초) 주기
+
 export default function HarvestAdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [password, setPassword] = useState<string>('');
@@ -81,7 +84,11 @@ export default function HarvestAdminPage() {
   const [newArtistPriority, setNewArtistPriority] = useState<number>(1);
   const [addingArtist, setAddingArtist] = useState<boolean>(false);
 
-  // 상단 지표 실시간 계산 (target_artists의 최신 last_harvested_at 기준 산출)
+  // ⏱️ 다음 자동 갱신 카운트다운 타이머 (초 단위)
+  const [countdown, setCountdown] = useState<number>(REFRESH_INTERVAL_SECONDS);
+  const [isAutoRefreshing, setIsAutoRefreshing] = useState<boolean>(false);
+
+  // 상단 지표 계산
   const stats = useMemo(() => {
     const totalSongs = songs.length;
     const totalArtists = artists.length;
@@ -93,7 +100,6 @@ export default function HarvestAdminPage() {
     const bpmRate = totalSongs > 0 ? Math.round((analyzedBpmCount / totalSongs) * 100) : 0;
     const keyRate = totalSongs > 0 ? Math.round((analyzedKeyCount / totalSongs) * 100) : 0;
 
-    // 가장 최근 수집된 아티스트 기록 탐색
     const harvested = artists
       .filter((a) => a.last_harvested_at)
       .sort((a, b) => new Date(b.last_harvested_at!).getTime() - new Date(a.last_harvested_at!).getTime());
@@ -133,42 +139,53 @@ export default function HarvestAdminPage() {
     }
   }, []);
 
-  // 💡 가벼운 자동 갱신 폴링 (대용량 곡 조회를 매번 하지 않고 아티스트 갱신 시에만 곡 fetch)
+  // 전체 데이터 갱신 함수
+  const refreshAllData = async () => {
+    setIsAutoRefreshing(true);
+    try {
+      await Promise.all([fetchArtists(), fetchSongs(), fetchReports()]);
+    } catch (e) {
+      console.error('[자동 갱신 오류]:', e);
+    } finally {
+      setIsAutoRefreshing(false);
+    }
+  };
+
+  // 초기 1회 로드
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    refreshAllData();
+  }, [isAuthenticated]);
+
+  // ⏱️ 카운트다운 타이머 인터벌
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    fetchArtists();
-    fetchSongs();
-    fetchReports();
-
-    let lastKnownTime: string | null = null;
-
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch('/api/artists');
-        const data = await res.json();
-        if (data?.artists) {
-          setArtists(data.artists);
-
-          // 가장 최근 수집된 시각 비교
-          const latest = data.artists
-            .filter((a: any) => a.last_harvested_at)
-            .sort((a: any, b: any) => new Date(b.last_harvested_at).getTime() - new Date(a.last_harvested_at).getTime())[0];
-
-          if (latest && latest.last_harvested_at !== lastKnownTime) {
-            lastKnownTime = latest.last_harvested_at;
-            // 수집이 새로 일어났을 때만 곡 목록 갱신
-            fetchSongs();
-          }
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          refreshAllData();
+          return REFRESH_INTERVAL_SECONDS;
         }
-        fetchReports();
-      } catch (e) {
-        console.error('[자동 갱신 폴링 실패]:', e);
-      }
-    }, 30000); // 30초 주기
+        return prev - 1;
+      });
+    }, 1000);
 
-    return () => clearInterval(interval);
+    return () => clearInterval(timer);
   }, [isAuthenticated]);
+
+  // 수동 즉시 리셋 및 갱신
+  function handleManualRefreshNow() {
+    setCountdown(REFRESH_INTERVAL_SECONDS);
+    refreshAllData();
+  }
+
+  // MM:SS 포맷팅
+  function formatCountdown(seconds: number) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
 
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault();
@@ -272,7 +289,7 @@ export default function HarvestAdminPage() {
   }
 
   async function handleCleanupNonBand() {
-    if (!confirm('Classical, Dance, Electronic, OST 등 밴드 합주에 부적합한 음원을 일괄 검사하여 삭제하시겠습니까?')) return;
+    if (!confirm('부적합 음원을 일괄 검사하여 정리하시겠습니까?')) return;
 
     setIsCleaning(true);
     setLastMessage('비밴드 장르 음원 검증 및 정리 중...');
@@ -392,7 +409,7 @@ export default function HarvestAdminPage() {
       const data = await res.json();
 
       if (res.ok && data.success) {
-        setLastMessage(`'${newArtistName}' 수집 큐 등록 완료 (LLM 메타데이터 분석 반영)`);
+        setLastMessage(`'${newArtistName}' 수집 큐 등록 완료`);
         setNewArtistName('');
         setNewArtistPriority(1);
         setIsAddArtistOpen(false);
@@ -441,6 +458,7 @@ export default function HarvestAdminPage() {
         const artist = data.lastExecution?.artist || '아티스트';
         const count = data.lastExecution?.count || 0;
         setLastMessage(`${artist} ${count}곡 수집/분석 갱신 완료`);
+        setCountdown(REFRESH_INTERVAL_SECONDS);
         await fetchArtists();
         await fetchSongs();
       } else {
@@ -526,19 +544,19 @@ export default function HarvestAdminPage() {
     <main className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 lg:p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* 상단 헤더 */}
+        {/* 헤더 */}
         <header className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-slate-800 gap-4">
           <div>
             <div className="flex items-center gap-2.5">
               <h1 className="text-2xl font-black bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-                실시간 음원 수집 및 오디오 분석 모니터
+                WeBandChu Admin
               </h1>
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
-                수집 파이프라인
+                실시간 수집 모니터링
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Apple iTunes 30초 오디오 실측 파형 기반 BPM 및 조성(Key) 자동 산출 현황
+              밴드 맞춤형 음원 수집 및 오디오 파형 분석 관리자 패널
             </p>
           </div>
 
@@ -596,7 +614,7 @@ export default function HarvestAdminPage() {
           </div>
         )}
 
-        {/* 5대 핵심 지표 카드 */}
+        {/* 5대 핵심 지표 카드 + 실시간 카운트다운 타이머 */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
             <span className="text-xs text-slate-400 block mb-1">총 수집 곡수</span>
@@ -620,22 +638,54 @@ export default function HarvestAdminPage() {
             <span className="text-2xl font-black text-purple-400">{stats.keyRate}%</span>
           </div>
 
-          <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl col-span-2 sm:col-span-1">
-            <span className="text-xs text-slate-400 block mb-1 flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5 text-indigo-400" /> 마지막 갱신
-            </span>
-            {stats.lastExecution ? (
-              <div>
-                <span className="text-sm font-bold text-slate-100 block truncate">
-                  {new Date(stats.lastExecution.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          {/* ⏱️ 마지막 갱신 및 카운트다운 타이머 카드 */}
+          <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl col-span-2 sm:col-span-1 flex flex-col justify-between relative overflow-hidden">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-slate-400 flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-indigo-400" /> 마지막 갱신
                 </span>
-                <span className="text-[10px] text-indigo-400 block truncate mt-0.5">
-                  {stats.lastExecution.artist} ({stats.lastExecution.count}곡)
+                <button
+                  type="button"
+                  onClick={handleManualRefreshNow}
+                  title="지금 즉시 갱신 및 타이머 리셋"
+                  className="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-indigo-400 transition"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isAutoRefreshing ? 'animate-spin text-indigo-400' : ''}`} />
+                </button>
+              </div>
+
+              {stats.lastExecution ? (
+                <div>
+                  <span className="text-sm font-bold text-slate-100 block truncate">
+                    {new Date(stats.lastExecution.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </span>
+                  <span className="text-[10px] text-indigo-400 block truncate mt-0.5">
+                    {stats.lastExecution.artist} ({stats.lastExecution.count}곡)
+                  </span>
+                </div>
+              ) : (
+                <span className="text-sm font-bold text-slate-500">기록 없음</span>
+              )}
+            </div>
+
+            {/* 실시간 잔여 시간 카운트다운 및 프로그레스 바 */}
+            <div className="mt-3 pt-2 border-t border-slate-800/80">
+              <div className="flex items-center justify-between text-[11px] mb-1">
+                <span className="text-slate-500 flex items-center gap-1">
+                  <Timer className="w-3 h-3 text-cyan-400" /> 다음 갱신
+                </span>
+                <span className="font-mono font-bold text-cyan-300">
+                  {formatCountdown(countdown)}
                 </span>
               </div>
-            ) : (
-              <span className="text-sm font-bold text-slate-500">기록 없음</span>
-            )}
+              <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
+                <div 
+                  className="bg-cyan-400 h-full transition-all duration-1000 ease-linear"
+                  style={{ width: `${(countdown / REFRESH_INTERVAL_SECONDS) * 100}%` }}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
