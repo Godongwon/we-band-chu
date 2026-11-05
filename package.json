@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.118.0",
     "audio-decode": "^3.12.0",
     "cheerio": "^1.2.0",
