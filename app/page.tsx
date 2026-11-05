@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   Music, 
   Sparkles, 
@@ -35,6 +36,8 @@ interface SongItem {
 }
 
 export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
+  const router = useRouter();
+
   // 밴드 프로필 상태
   const [bandProfile, setBandProfile] = useState({
     name: currentBand?.name || '루시드 밴드',
@@ -43,18 +46,33 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     has_keys: currentBand?.has_keys ?? true,
   });
 
-  useEffect(() => {
-    if (currentBand) {
-      setBandProfile({
-        name: currentBand.name || '루시드 밴드',
-        vocal_gender: currentBand.vocal_gender || 'FEMALE',
-        guitar_count: currentBand.guitar_count ?? 1,
-        has_keys: currentBand.has_keys ?? true,
-      });
-    }
-  }, [currentBand]);
+  const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
 
-  // 💡 [신규] 구성 수정 모달 State
+  // 💡 [핵심] 로그인 세션 검사 (B 방법: localStorage 기반)
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('current_band');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setBandProfile({
+          name: parsed.name || '루시드 밴드',
+          vocal_gender: parsed.vocal_gender || 'FEMALE',
+          guitar_count: parsed.guitar_count ?? 1,
+          has_keys: parsed.has_keys ?? true,
+        });
+      } else if (!currentBand) {
+        // 저장된 밴드 세션이 없으면 입장(로그인) 화면으로 리다이렉트
+        router.replace('/');
+        return;
+      }
+    } catch (e) {
+      console.error('[세션 검사 오류]:', e);
+    } finally {
+      setIsAuthChecking(false);
+    }
+  }, [currentBand, router]);
+
+  // 구성 수정 모달 State
   const [isEditProfileOpen, setIsEditProfileOpen] = useState<boolean>(false);
   const [editName, setEditName] = useState<string>(bandProfile.name);
   const [editVocalGender, setEditVocalGender] = useState<string>(bandProfile.vocal_gender);
@@ -67,7 +85,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
   const [loading, setLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // 곡 상세 정보 모달 State
   const [selectedSong, setSelectedSong] = useState<SongItem | null>(null);
 
   // 제보 모달 State
@@ -103,10 +120,20 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
   }
 
   useEffect(() => {
-    fetchRecommendations(activeTab);
-  }, [activeTab]);
+    if (!isAuthChecking) {
+      fetchRecommendations(activeTab);
+    }
+  }, [activeTab, isAuthChecking]);
 
-  // 구성 수정 모달 열릴 때 현재 상태 동기화
+  // 💡 [핵심] 로그아웃 핸들러
+  function handleLogout() {
+    if (confirm(`'${bandProfile.name}' 워크스페이스에서 로그아웃하시겠습니까?`)) {
+      localStorage.removeItem('current_band');
+      sessionStorage.removeItem('current_band');
+      router.replace('/');
+    }
+  }
+
   function handleOpenEditProfile() {
     setEditName(bandProfile.name);
     setEditVocalGender(bandProfile.vocal_gender);
@@ -115,7 +142,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     setIsEditProfileOpen(true);
   }
 
-  // 구성 수정 저장 핸들러
   function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault();
     if (!editName.trim()) {
@@ -131,13 +157,12 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     };
 
     setBandProfile(updatedProfile);
+    localStorage.setItem('current_band', JSON.stringify(updatedProfile));
     setIsEditProfileOpen(false);
 
-    // 변경된 세션 구성에 맞춰 추천곡 다시 호출
     fetchRecommendations(activeTab, updatedProfile);
   }
 
-  // 신고 버튼 핸들러
   async function handleReportSong(song: SongItem) {
     const reason = prompt(
       `'${song.title} (${song.artist})' 곡을 신고하시겠습니까?\n사유를 입력해 주세요:`,
@@ -174,7 +199,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     setRecommendedSongs((prev) => prev.filter((s) => s.title !== song.title));
   }
 
-  // 레퍼토리 담기
   function handleAddToRepertoire(song: SongItem) {
     if (repertoire.some((r) => r.title === song.title)) {
       alert('이미 레퍼토리에 담긴 곡입니다.');
@@ -187,7 +211,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     }
   }
 
-  // 곡 제보 전송 핸들러
   async function handleSubmitSuggestion(e: React.FormEvent) {
     e.preventDefault();
     if (!suggestTitle.trim() || !suggestArtist.trim()) {
@@ -225,6 +248,14 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     }
   }
 
+  if (isAuthChecking) {
+    return (
+      <main className="min-h-screen bg-[#070913] flex items-center justify-center text-xs text-slate-500">
+        밴드 워크스페이스 세션 확인 중...
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[#070913] text-slate-100 p-4 sm:p-6 font-sans">
       <div className="max-w-7xl mx-auto space-y-4">
@@ -240,14 +271,20 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
             </span>
           </div>
 
-          <button className="text-slate-500 hover:text-slate-300 p-1.5 transition">
+          {/* 💡 로그아웃 버튼 연결 완료 */}
+          <button 
+            type="button"
+            onClick={handleLogout}
+            title="밴드 로그아웃"
+            className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-900 transition flex items-center gap-1 text-xs"
+          >
             <LogOut className="w-4 h-4" />
+            <span className="hidden sm:inline text-[11px]">로그아웃</span>
           </button>
         </header>
 
         {/* 밴드 프로필 & 액션 툴바 */}
         <div className="bg-[#0b0e20]/80 border border-slate-800/80 rounded-2xl p-3 sm:px-4 sm:py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
-          {/* 밴드 프로필 정보 뱃지 그룹 */}
           <div className="flex items-center gap-2 flex-wrap text-xs">
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-950/70 border border-indigo-800/80 text-indigo-200 font-bold">
               <Users className="w-3.5 h-3.5 text-indigo-400" />
@@ -264,7 +301,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
               {bandProfile.has_keys ? '건반 O' : '건반 X'}
             </span>
 
-            {/* 💡 [연결 완료] 구성 수정 버튼 */}
             <button 
               type="button"
               onClick={handleOpenEditProfile}
@@ -275,7 +311,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
             </button>
           </div>
 
-          {/* 우측: 곡 제보하기 버튼 */}
           <button
             type="button"
             onClick={() => setIsSuggestOpen(true)}
@@ -300,7 +335,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
 
         {/* 2열 메인 컨텐츠 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start pt-1">
-          
           {/* 좌측: 우리 밴드 레퍼토리 */}
           <div className="bg-[#0b0e1e]/60 border border-slate-800/60 rounded-2xl p-5 space-y-4">
             <div className="flex items-center justify-between">
@@ -406,7 +440,6 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
               </button>
             </div>
 
-            {/* 추천 곡 리스트 */}
             {loading ? (
               <div className="p-16 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
                 <RefreshCw className="w-5 h-5 animate-spin text-indigo-400" />
@@ -491,7 +524,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
 
       </div>
 
-      {/* 💡 [신규 구현] 밴드 구성 수정 모달 */}
+      {/* 밴드 구성 수정 모달 */}
       {isEditProfileOpen && (
         <div 
           className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
