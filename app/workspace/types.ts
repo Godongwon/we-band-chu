@@ -32,3 +32,22 @@ export interface BandProfile {
   guitar_count: number;
   has_keys: boolean;
 }
+
+export function getSongCompositeKey(
+  song?: { title?: string; artist?: string } | null
+): string {
+  const t = (song?.title || '').toLowerCase().trim();
+  const a = (song?.artist || '').toLowerCase().trim();
+  return `${t}:::${a}`;
+}
+
+export function isSameSong(a?: SongItem | null, b?: SongItem | null): boolean {
+  if (!a || !b) return false;
+  if (a.repertoire_id && b.repertoire_id && a.repertoire_id === b.repertoire_id) {
+    return true;
+  }
+  if (a.id && b.id) {
+    return a.id === b.id;
+  }
+  return getSongCompositeKey(a) === getSongCompositeKey(b);
+}

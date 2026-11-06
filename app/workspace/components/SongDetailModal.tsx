@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { X, Sliders, Guitar, ExternalLink, Music, Sparkles, Play, AlertCircle, Plus, Check } from 'lucide-react';
-import { SongItem, BandProfile } from '../types';
+import { SongItem, BandProfile, isSameSong } from '../types';
 import { REPERTOIRE_STATUS_OPTIONS } from './RepertoirePanel';
 
 interface SongDetailModalProps {
@@ -24,13 +24,7 @@ export default function SongDetailModal({
 }: SongDetailModalProps) {
   if (!selectedSong) return null;
 
-  const matchedRep = repertoire.find(
-    (r) =>
-      (selectedSong.id && r.id === selectedSong.id) ||
-      (r.title &&
-        selectedSong.title &&
-        r.title.toLowerCase().trim() === selectedSong.title.toLowerCase().trim())
-  );
+  const matchedRep = repertoire.find((r) => isSameSong(r, selectedSong));
 
   const repStatusObj = matchedRep
     ? REPERTOIRE_STATUS_OPTIONS.find(

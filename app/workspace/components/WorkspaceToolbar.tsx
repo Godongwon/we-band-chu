@@ -13,7 +13,7 @@ import {
   AlertCircle,
   Check,
 } from 'lucide-react';
-import { BandProfile, SongItem } from '../types';
+import { BandProfile, SongItem, getSongCompositeKey } from '../types';
 import { REPERTOIRE_STATUS_OPTIONS } from './RepertoirePanel';
 
 interface WorkspaceToolbarProps {
@@ -47,15 +47,15 @@ export default function WorkspaceToolbar({
 }: WorkspaceToolbarProps) {
   const isSearchActive = searchQuery.trim().length > 0;
 
-  // 레퍼토리에 담긴 곡 빠른 조회 맵 (id 및 소문자 제목 기준)
+  // 레퍼토리에 담긴 곡 빠른 조회 맵 (고유 id 및 '제목:::아티스트' 복합키 기준 - 동명이곡 오매칭 원천 차단)
   const repertoireLookup = useMemo(() => {
     const byId = new Map<string, SongItem>();
-    const byTitle = new Map<string, SongItem>();
+    const byTitleArtist = new Map<string, SongItem>();
     for (const item of repertoire) {
       if (item.id) byId.set(item.id, item);
-      if (item.title) byTitle.set(item.title.toLowerCase().trim(), item);
+      if (item.title) byTitleArtist.set(getSongCompositeKey(item), item);
     }
-    return { byId, byTitle };
+    return { byId, byTitleArtist };
   }, [repertoire]);
 
   return (
@@ -188,9 +188,10 @@ export default function WorkspaceToolbar({
             ) : (
               <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
                 {searchResults.map((song, idx) => {
-                  const matchedRep =
-                    (song.id && repertoireLookup.byId.get(song.id)) ||
-                    repertoireLookup.byTitle.get((song.title || '').toLowerCase().trim());
+                  const matchedRep = song.id
+                    ? repertoireLookup.byId.get(song.id) ||
+                      repertoireLookup.byTitleArtist.get(getSongCompositeKey(song))
+                    : repertoireLookup.byTitleArtist.get(getSongCompositeKey(song));
 
                   const repStatusObj = matchedRep
                     ? REPERTOIRE_STATUS_OPTIONS.find(

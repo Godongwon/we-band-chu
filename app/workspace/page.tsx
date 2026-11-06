@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { SongItem, BandProfile, RepertoireStatus } from './types';
+import { SongItem, BandProfile, RepertoireStatus, getSongCompositeKey, isSameSong } from './types';
 import WorkspaceToolbar from './components/WorkspaceToolbar';
 import RepertoirePanel from './components/RepertoirePanel';
 import RecommendationPanel from './components/RecommendationPanel';
@@ -10,6 +10,31 @@ import EditBandProfileModal from './components/EditBandProfileModal';
 import SuggestSongModal from './components/SuggestSongModal';
 import SongDetailModal from './components/SongDetailModal';
 import PracticeModal from '@/app/components/PracticeModal';
+
+const VALID_REPERTOIRE_STATUSES: RepertoireStatus[] = [
+  'WISHLIST',
+  'PRACTICING',
+  'ENSEMBLE',
+  'COMPLETED',
+  'PERFORMED',
+  'VIDEO_COMPLETED',
+];
+
+function toDbEnumStatus(st: RepertoireStatus): 'WISHLIST' | 'PRACTICING' | 'COMPLETED' | 'PERFORMED' {
+  if (st === 'ENSEMBLE') return 'PRACTICING';
+  if (st === 'VIDEO_COMPLETED') return 'PERFORMED';
+  return st;
+}
+
+function resolveRepertoireStatus(rawSubStatus?: string | null, rawEnumStatus?: string | null): RepertoireStatus {
+  if (rawSubStatus && VALID_REPERTOIRE_STATUSES.includes(rawSubStatus as RepertoireStatus)) {
+    return rawSubStatus as RepertoireStatus;
+  }
+  if (rawEnumStatus && VALID_REPERTOIRE_STATUSES.includes(rawEnumStatus as RepertoireStatus)) {
+    return rawEnumStatus as RepertoireStatus;
+  }
+  return 'WISHLIST';
+}
 
 export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
   const [bandProfile, setBandProfile] = useState<BandProfile>({
@@ -94,43 +119,79 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
 
           const { data: dbRep } = await supabase
             .from('band_repertoire')
-            .select('id, song_id, status, played_key, band_notes, songs (*)')
+            .select('id, song_id, status, rehearsal_audio_url, played_key, band_notes, songs (*)')
             .eq('band_id', dbBand.id)
             .order('created_at', { ascending: false });
 
-          if (dbRep && dbRep.length > 0) {
-            const dbSongs: SongItem[] = dbRep
-              .filter((r: any) => r.songs)
-              .map((r: any) => ({
-                id: r.songs.id,
-                repertoire_id: r.id,
-                status: (r.status as RepertoireStatus) || 'WISHLIST',
-                band_notes: r.band_notes || '',
-                title: r.songs.title,
-                artist: r.songs.artist,
-                genre: r.songs.genre || 'Rock/Band',
-                bpm: r.songs.bpm || 120,
-                original_key: r.songs.original_key || '원키 유지',
-                recommended_key: r.played_key || r.songs.original_key || '원키 유지',
-                youtube_url: r.songs.youtube_url,
-              }));
+          const dbSongs: SongItem[] = (dbRep || [])
+            .filter((r: any) => r.songs)
+            .map((r: any) => ({
+              id: r.songs.id,
+              repertoire_id: r.id,
+              status: resolveRepertoireStatus(r.rehearsal_audio_url, r.status),
+              band_notes: r.band_notes || '',
+              title: r.songs.title,
+              artist: r.songs.artist,
+              genre: r.songs.genre || 'Rock/Band',
+              bpm: r.songs.bpm || 120,
+              original_key: r.songs.original_key || '원키 유지',
+              recommended_key: r.played_key || r.songs.original_key || '원키 유지',
+              youtube_url: r.songs.youtube_url,
+            }));
 
-            const mergedMap = new Map<string, SongItem>();
-            [...restoredRep, ...dbSongs].forEach((item) => {
-              if (item && item.title) {
-                const key = item.title.toLowerCase().trim();
-                const prev = mergedMap.get(key);
-                mergedMap.set(key, {
-                  ...prev,
-                  ...item,
-                  status: item.status || prev?.status || 'WISHLIST',
-                  repertoire_id: item.repertoire_id || prev?.repertoire_id,
-                });
+          const dbKeySet = new Set(dbSongs.map((s) => (s.id ? `id:${s.id}` : getSongCompositeKey(s))));
+          const dbCompositeSet = new Set(dbSongs.map((s) => getSongCompositeKey(s)));
+
+          // 로컬 스토리지에만 있고 아직 DB(band_repertoire)에 없던 곡이 있으면 DB에 자동 백필 저장
+          for (const localItem of restoredRep) {
+            if (!localItem?.title) continue;
+            const localKey = localItem.id ? `id:${localItem.id}` : getSongCompositeKey(localItem);
+            const localComposite = getSongCompositeKey(localItem);
+            if (dbKeySet.has(localKey) || dbCompositeSet.has(localComposite)) continue;
+
+            let targetSongId = localItem.id;
+            if (!targetSongId) {
+              let query = supabase
+                .from('songs')
+                .select('id')
+                .ilike('title', localItem.title.trim());
+              if (localItem.artist?.trim()) {
+                query = query.ilike('artist', localItem.artist.trim());
               }
-            });
-            const mergedList = Array.from(mergedMap.values());
-            setRepertoire(mergedList);
-            localStorage.setItem(`repertoire_${currentProfile.name}`, JSON.stringify(mergedList));
+              const { data: foundSong } = await query.limit(1).maybeSingle();
+              targetSongId = foundSong?.id;
+            }
+
+            if (targetSongId) {
+              const st: RepertoireStatus = localItem.status || 'WISHLIST';
+              const { data: inserted } = await supabase
+                .from('band_repertoire')
+                .insert({
+                  band_id: dbBand.id,
+                  song_id: targetSongId,
+                  status: toDbEnumStatus(st),
+                  rehearsal_audio_url: st,
+                  played_key: localItem.recommended_key || localItem.original_key || 'C',
+                  band_notes: localItem.band_notes || '워크스페이스 레퍼토리 추가',
+                  votes_count: 1,
+                })
+                .select('id')
+                .single();
+
+              dbSongs.push({
+                ...localItem,
+                id: targetSongId,
+                repertoire_id: inserted?.id,
+                status: st,
+              });
+              dbKeySet.add(`id:${targetSongId}`);
+              dbCompositeSet.add(localComposite);
+            }
+          }
+
+          if (dbSongs.length > 0 || restoredRep.length === 0) {
+            setRepertoire(dbSongs);
+            localStorage.setItem(`repertoire_${currentProfile.name}`, JSON.stringify(dbSongs));
           }
         }
 
@@ -324,15 +385,15 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
       alert(`신고 통신 에러: ${err.message}`);
     }
 
-    if (selectedSong?.title === song.title) {
+    if (selectedSong && isSameSong(selectedSong, song)) {
       setSelectedSong(null);
     }
-    setRecommendedSongs((prev) => prev.filter((s) => s.title !== song.title));
-    setSearchResults((prev) => prev.filter((s) => s.title !== song.title));
+    setRecommendedSongs((prev) => prev.filter((s) => !isSameSong(s, song)));
+    setSearchResults((prev) => prev.filter((s) => !isSameSong(s, song)));
   }
 
   async function handleAddToRepertoire(song: SongItem) {
-    if (repertoire.some((r) => r.title === song.title)) {
+    if (repertoire.some((r) => isSameSong(r, song))) {
       alert('이미 레퍼토리에 담긴 곡입니다.');
       return;
     }
@@ -344,8 +405,8 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     setRepertoire(nextRep);
     localStorage.setItem(`repertoire_${bandProfile.name}`, JSON.stringify(nextRep));
 
-    setRecommendedSongs((prev) => prev.filter((s) => s.title !== song.title));
-    if (selectedSong?.title === song.title) {
+    setRecommendedSongs((prev) => prev.filter((s) => !isSameSong(s, song)));
+    if (selectedSong && isSameSong(selectedSong, song)) {
       setSelectedSong(null);
     }
 
@@ -364,12 +425,14 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
           .maybeSingle();
 
         if (!existingRep) {
+          const initialStatus: RepertoireStatus = song.status || 'WISHLIST';
           const { data: insertedRep } = await supabase
             .from('band_repertoire')
             .insert({
               band_id: targetBandId,
               song_id: song.id,
-              status: 'WISHLIST',
+              status: toDbEnumStatus(initialStatus),
+              rehearsal_audio_url: initialStatus,
               played_key: song.recommended_key || song.original_key || 'C',
               band_notes: '워크스페이스 레퍼토리 추가',
               votes_count: 1,
@@ -380,7 +443,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
           if (insertedRep?.id) {
             setRepertoire((prev) => {
               const updated = prev.map((r) =>
-                r.title === song.title ? { ...r, repertoire_id: insertedRep.id } : r
+                isSameSong(r, song) ? { ...r, repertoire_id: insertedRep.id } : r
               );
               localStorage.setItem(`repertoire_${bandProfile.name}`, JSON.stringify(updated));
               return updated;
@@ -403,35 +466,109 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     }
 
     const nextRep = repertoire.map((r) =>
-      r.title === song.title ? { ...r, status: newStatus } : r
+      isSameSong(r, song) ? { ...r, status: newStatus } : r
     );
     setRepertoire(nextRep);
     localStorage.setItem(`repertoire_${bandProfile.name}`, JSON.stringify(nextRep));
 
     try {
+      const dbEnumStatus = toDbEnumStatus(newStatus);
+      const completedAt =
+        newStatus === 'COMPLETED' || newStatus === 'PERFORMED' || newStatus === 'VIDEO_COMPLETED'
+          ? new Date().toISOString()
+          : null;
+
       if (song.repertoire_id) {
-        await supabase
+        const { error: updErr } = await supabase
           .from('band_repertoire')
           .update({
-            status: newStatus,
-            completed_at:
-              newStatus === 'COMPLETED' || newStatus === 'PERFORMED' || newStatus === 'VIDEO_COMPLETED'
-                ? new Date().toISOString()
-                : null,
+            status: dbEnumStatus,
+            rehearsal_audio_url: newStatus,
+            completed_at: completedAt,
           })
           .eq('id', song.repertoire_id);
-      } else if (bandProfile.id && song.id) {
-        await supabase
+
+        if (updErr) console.error('[레퍼토리 상태 업데이트 에러]:', updErr.message);
+        return;
+      }
+
+      // repertoire_id가 없는 경우 band_id와 song_id로 조회 후 업데이트 또는 신규 생성
+      let targetBandId = bandProfile.id;
+      if (!targetBandId) {
+        const { data: b } = await supabase
+          .from('bands')
+          .select('id')
+          .eq('name', bandProfile.name)
+          .maybeSingle();
+        targetBandId = b?.id;
+      }
+
+      let targetSongId = song.id;
+      if (!targetSongId && song.title) {
+        let query = supabase
+          .from('songs')
+          .select('id')
+          .ilike('title', song.title.trim());
+        if (song.artist?.trim()) {
+          query = query.ilike('artist', song.artist.trim());
+        }
+        const { data: s } = await query.limit(1).maybeSingle();
+        targetSongId = s?.id;
+      }
+
+      if (targetBandId && targetSongId) {
+        const { data: existingRow } = await supabase
           .from('band_repertoire')
-          .update({
-            status: newStatus,
-            completed_at:
-              newStatus === 'COMPLETED' || newStatus === 'PERFORMED' || newStatus === 'VIDEO_COMPLETED'
-                ? new Date().toISOString()
-                : null,
-          })
-          .eq('band_id', bandProfile.id)
-          .eq('song_id', song.id);
+          .select('id')
+          .eq('band_id', targetBandId)
+          .eq('song_id', targetSongId)
+          .maybeSingle();
+
+        if (existingRow?.id) {
+          await supabase
+            .from('band_repertoire')
+            .update({
+              status: dbEnumStatus,
+              rehearsal_audio_url: newStatus,
+              completed_at: completedAt,
+            })
+            .eq('id', existingRow.id);
+
+          setRepertoire((prev) => {
+            const updated = prev.map((r) =>
+              isSameSong(r, song) ? { ...r, id: targetSongId, repertoire_id: existingRow.id } : r
+            );
+            localStorage.setItem(`repertoire_${bandProfile.name}`, JSON.stringify(updated));
+            return updated;
+          });
+        } else {
+          const { data: insertedRow } = await supabase
+            .from('band_repertoire')
+            .insert({
+              band_id: targetBandId,
+              song_id: targetSongId,
+              status: dbEnumStatus,
+              rehearsal_audio_url: newStatus,
+              played_key: song.recommended_key || song.original_key || 'C',
+              band_notes: song.band_notes || '워크스페이스 레퍼토리 추가',
+              completed_at: completedAt,
+              votes_count: 1,
+            })
+            .select('id')
+            .single();
+
+          if (insertedRow?.id) {
+            setRepertoire((prev) => {
+              const updated = prev.map((r) =>
+                isSameSong(r, song)
+                  ? { ...r, id: targetSongId, repertoire_id: insertedRow.id }
+                  : r
+              );
+              localStorage.setItem(`repertoire_${bandProfile.name}`, JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }
       }
     } catch (err) {
       console.error('[레퍼토리 상태 변경 DB 저장 오류]:', err);
@@ -439,9 +576,9 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
   }
 
   async function handleRemoveFromRepertoire(song: SongItem) {
-    if (!confirm(`'${song.title}' 곡을 우리 밴드 레퍼토리에서 제거하시겠습니까?`)) return;
+    if (!confirm(`'${song.title} (${song.artist})' 곡을 우리 밴드 레퍼토리에서 제거하시겠습니까?`)) return;
 
-    const nextRep = repertoire.filter((r) => r.title !== song.title);
+    const nextRep = repertoire.filter((r) => !isSameSong(r, song));
     setRepertoire(nextRep);
     localStorage.setItem(`repertoire_${bandProfile.name}`, JSON.stringify(nextRep));
 
