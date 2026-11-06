@@ -44,6 +44,7 @@ export default function HarvestAdminPage() {
   const [loading, setLoading] = useState<boolean>(false);
   const [triggering, setTriggering] = useState<boolean>(false);
   const [isCleaning, setIsCleaning] = useState<boolean>(false);
+  const [isLocalizingTitles, setIsLocalizingTitles] = useState<boolean>(false);
   const [isDeletingSelected, setIsDeletingSelected] = useState<boolean>(false);
   const [lastMessage, setLastMessage] = useState<string>('');
 
@@ -722,6 +723,70 @@ export default function HarvestAdminPage() {
     }
   }
 
+  async function handleLocalizeSongTitles() {
+    if (
+      !confirm(
+        "Apple Music 한국 스토어 공식 곡명을 조회하여 영문 단독 제목을 '한글명 (영문명)' 형태로 일괄 변환하시겠습니까?"
+      )
+    ) {
+      return;
+    }
+
+    setIsLocalizingTitles(true);
+    setLastMessage("Apple Music 한국 스토어 공식 한글 곡명 매칭 및 '한글명 (영문명)' 변환 진행 중...");
+
+    try {
+      const res = await fetch('/api/songs/localize-titles', {
+        method: 'POST',
+        cache: 'no-store',
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setLastMessage(data.message);
+        await fetchSongs(true);
+      } else {
+        setLastMessage(`곡명 한글화 실패: ${data.message || data.error}`);
+      }
+    } catch (err: any) {
+      setLastMessage(`곡명 한글화 오류: ${err.message}`);
+    } finally {
+      setIsLocalizingTitles(false);
+    }
+  }
+
+  async function handleEditSongTitle(e: React.MouseEvent, song: SongItem) {
+    e.stopPropagation();
+    const newTitle = prompt(
+      `'${song.artist}' 곡의 제목을 수정해 주세요 (예: 고민중독 (T.B.H)):`,
+      song.title
+    );
+    if (!newTitle || newTitle.trim() === song.title) return;
+
+    try {
+      const res = await fetch('/api/songs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: song.id,
+          title: newTitle.trim(),
+          artist: song.artist,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLastMessage(data.message);
+        setSongs((prev) =>
+          prev.map((s) => (s.id === song.id ? { ...s, title: newTitle.trim() } : s))
+        );
+      } else {
+        alert(`곡명 수정 실패: ${data.message || '오류 발생'}`);
+      }
+    } catch (err: any) {
+      alert(`통신 오류: ${err.message}`);
+    }
+  }
+
   async function handleDeleteSong(e: React.MouseEvent, song: SongItem) {
     e.stopPropagation();
     if (!confirm(`'${song.title} (${song.artist})' 곡을 DB에서 삭제하시겠습니까?`)) return;
@@ -993,11 +1058,13 @@ export default function HarvestAdminPage() {
           reportsCount={reports.length}
           isCleaning={isCleaning}
           isBackfilling={isBackfilling}
+          isLocalizingTitles={isLocalizingTitles}
           triggering={triggering}
           onOpenSuggestions={() => setIsSuggestionsOpen(true)}
           onOpenReports={() => setIsReportsOpen(true)}
           onCleanupNonBand={handleCleanupNonBand}
           onBackfillAudio={handleBackfillAudio}
+          onLocalizeTitles={handleLocalizeSongTitles}
           onTriggerNow={handleTriggerNow}
         />
 
@@ -1046,6 +1113,7 @@ export default function HarvestAdminPage() {
             onToggleSelectAll={() => toggleSelectAll(filteredSongs)}
             onChangeSearchQuery={setSearchSongQuery}
             onToggleSongSelection={toggleSongSelection}
+            onEditSongTitle={handleEditSongTitle}
             onDeleteSong={handleDeleteSong}
           />
         </div>

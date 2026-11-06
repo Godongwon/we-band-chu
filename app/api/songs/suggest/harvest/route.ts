@@ -2,7 +2,11 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { classifyArtistWithLLM } from '@/lib/artistClassifier';
-import { analyzePreviewAudio } from '@/lib/audioAnalyzer';
+import {
+  analyzePreviewAudio,
+  resolveKoreanTrackTitlesByTrackIds,
+  formatLocalizedTrackTitle,
+} from '@/lib/audioAnalyzer';
 
 export const maxDuration = 60;
 
@@ -16,20 +20,29 @@ export async function POST(req: Request) {
       const itunesData = await res.json();
       const match = itunesData.results?.[0];
 
+      let resolvedTitle = match?.trackName || title;
+      if (match?.trackId) {
+        const krMap = await resolveKoreanTrackTitlesByTrackIds([match.trackId]);
+        const krTitle = krMap.get(Number(match.trackId));
+        if (krTitle) {
+          resolvedTitle = formatLocalizedTrackTitle(krTitle, resolvedTitle);
+        }
+      }
+
       const previewUrl = match?.previewUrl || null;
       let analyzedBpm: number | null = null;
       let analyzedKey: string | null = null;
 
       if (previewUrl) {
-        const analysis = await analyzePreviewAudio(previewUrl, `${artist}-${title}`);
+        const analysis = await analyzePreviewAudio(previewUrl, `${artist}-${resolvedTitle}`);
         analyzedBpm = analysis.bpm;
         analyzedKey = analysis.key;
       }
 
-      const youtubeUrl = user_youtube_url || `https://www.youtube.com/results?search_query=${encodeURIComponent(`${artist} ${title}`)}`;
+      const youtubeUrl = user_youtube_url || `https://www.youtube.com/results?search_query=${encodeURIComponent(`${artist} ${resolvedTitle}`)}`;
 
       const previewSong = {
-        title: match?.trackName || title,
+        title: resolvedTitle,
         artist: match?.artistName || artist,
         genre: match?.primaryGenreName || 'Rock',
         preview_url: previewUrl,

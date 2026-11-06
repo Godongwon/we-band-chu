@@ -12,6 +12,7 @@ import {
   Play,
   ExternalLink,
   X,
+  Pencil,
 } from 'lucide-react';
 import { SongItem } from '../types';
 
@@ -30,6 +31,7 @@ interface HarvestedSongPanelProps {
   onToggleSelectAll: () => void;
   onChangeSearchQuery: (val: string) => void;
   onToggleSongSelection: (songId: string) => void;
+  onEditSongTitle?: (e: React.MouseEvent, song: SongItem) => void;
   onDeleteSong: (e: React.MouseEvent, song: SongItem) => void;
 }
 
@@ -48,6 +50,7 @@ export default function HarvestedSongPanel({
   onToggleSelectAll,
   onChangeSearchQuery,
   onToggleSongSelection,
+  onEditSongTitle,
   onDeleteSong,
 }: HarvestedSongPanelProps) {
   const isAllSelected = filteredSongs.length > 0 && selectedSongIds.size === filteredSongs.length;
@@ -188,6 +191,16 @@ export default function HarvestedSongPanel({
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-slate-200 truncate">{song.title}</span>
                         <span className="text-slate-400">({song.artist})</span>
+                        {onEditSongTitle && (
+                          <button
+                            type="button"
+                            onClick={(e) => onEditSongTitle(e, song)}
+                            title="곡 제목 직접 수정"
+                            className="p-0.5 rounded text-slate-500 hover:text-indigo-300 hover:bg-slate-800 transition"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">

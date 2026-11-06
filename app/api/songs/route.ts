@@ -99,3 +99,46 @@ export async function DELETE(req: Request) {
     );
   }
 }
+
+// ========================================================
+// 3. 음원 제목 등 단건 정보 수정 (PATCH)
+// ========================================================
+export async function PATCH(req: Request) {
+  try {
+    const { id, title, artist } = await req.json();
+    if (!id || !title || !String(title).trim()) {
+      return NextResponse.json(
+        { success: false, message: '곡 ID와 수정할 곡명이 필요합니다.' },
+        { status: 400 }
+      );
+    }
+
+    const cleanTitle = String(title).trim();
+    const updatePayload: any = { title: cleanTitle };
+    if (artist) {
+      updatePayload.youtube_url = `https://www.youtube.com/results?search_query=${encodeURIComponent(
+        `${artist} ${cleanTitle}`
+      )}`;
+    }
+
+    const { data, error } = await supabase
+      .from('songs')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return NextResponse.json({
+      success: true,
+      message: `곡명이 '${cleanTitle}'(으)로 수정되었습니다.`,
+      song: data,
+    });
+  } catch (err: any) {
+    return NextResponse.json(
+      { success: false, message: err.message || '곡명 수정 중 오류 발생' },
+      { status: 500 }
+    );
+  }
+}

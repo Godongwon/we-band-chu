@@ -1,18 +1,20 @@
 'use client';
 
 import React from 'react';
-import { Inbox, AlertTriangle, ShieldAlert, Sparkles, RefreshCw } from 'lucide-react';
+import { Inbox, AlertTriangle, ShieldAlert, Sparkles, RefreshCw, Languages } from 'lucide-react';
 
 interface AdminActionToolbarProps {
   suggestionsCount: number;
   reportsCount: number;
   isCleaning: boolean;
   isBackfilling: boolean;
+  isLocalizingTitles?: boolean;
   triggering: boolean;
   onOpenSuggestions: () => void;
   onOpenReports: () => void;
   onCleanupNonBand: () => void;
   onBackfillAudio: () => void;
+  onLocalizeTitles?: () => void;
   onTriggerNow: () => void;
 }
 
@@ -21,11 +23,13 @@ export default function AdminActionToolbar({
   reportsCount,
   isCleaning,
   isBackfilling,
+  isLocalizingTitles = false,
   triggering,
   onOpenSuggestions,
   onOpenReports,
   onCleanupNonBand,
   onBackfillAudio,
+  onLocalizeTitles,
   onTriggerNow,
 }: AdminActionToolbarProps) {
   return (
@@ -77,6 +81,19 @@ export default function AdminActionToolbar({
         <Sparkles className={`w-3.5 h-3.5 ${isBackfilling ? 'animate-spin' : ''}`} />
         기존곡 오디오 백필
       </button>
+
+      {onLocalizeTitles && (
+        <button
+          type="button"
+          disabled={isLocalizingTitles}
+          onClick={onLocalizeTitles}
+          title="Apple Music 한국 스토어 공식 곡명을 조회하여 '한글명 (영문명)' 형태로 일괄 변환"
+          className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-emerald-800/80 px-3.5 py-2 rounded-xl text-xs text-emerald-300 font-semibold shadow transition disabled:opacity-50 shrink-0"
+        >
+          <Languages className={`w-3.5 h-3.5 ${isLocalizingTitles ? 'animate-spin' : ''}`} />
+          {isLocalizingTitles ? '한글 곡명 변환 중...' : '영문 곡명 한글화'}
+        </button>
+      )}
 
       <button
         type="button"

@@ -77,11 +77,92 @@ export async function fetchPreviewUrl(title: string, artist: string): Promise<st
   return null;
 }
 
-// 밴드명 및 검색 별칭 기반 iTunes 정식 음원 리스트 탐색
+// 한국 Apple Music 공식 곡명과 글로벌 영문 곡명을 '한글명 (영문명)' 형태로 병기 포맷팅
+export function formatLocalizedTrackTitle(krTitle: string, originalTitle: string): string {
+  const cleanKr = String(krTitle || '')
+    .replace(/\s*\((Inst|MR|Instrumental|Karaoke).*?\)/gi, '')
+    .trim();
+  const cleanOrig = String(originalTitle || '')
+    .replace(/\s*\((Inst|MR|Instrumental|Karaoke).*?\)/gi, '')
+    .trim();
+
+  if (!cleanKr) return cleanOrig;
+  if (!cleanOrig) return cleanKr;
+
+  // 대소문자/공백 무시 시 동일하면 그대로 반환 (예: Discord === Discord)
+  if (cleanKr.toLowerCase() === cleanOrig.toLowerCase()) {
+    return cleanKr;
+  }
+
+  // 이미 병기되어 있는 경우 중복 방지
+  if (
+    cleanKr.toLowerCase().includes(`(${cleanOrig.toLowerCase()})`) ||
+    cleanOrig.toLowerCase().includes(`(${cleanKr.toLowerCase()})`)
+  ) {
+    return /[가-힣]/.test(cleanKr) ? cleanKr : cleanOrig;
+  }
+
+  // 한국 스토어 제목에 한글이 포함되어 있고 원본과 다르면 '한글명 (영문명)'으로 병기
+  if (/[가-힣]/.test(cleanKr) && !/[가-힣]/.test(cleanOrig)) {
+    return `${cleanKr} (${cleanOrig})`;
+  }
+
+  return cleanKr;
+}
+
+// iTunes trackId 배열을 받아 한국 스토어(country=KR) 공식 곡명 Map(trackId -> krTrackName) 일괄 조회
+export async function resolveKoreanTrackTitlesByTrackIds(
+  trackIds: Array<number | string>
+): Promise<Map<number, string>> {
+  const resultMap = new Map<number, string>();
+  const validIds = Array.from(
+    new Set(
+      trackIds
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0)
+    )
+  );
+
+  if (validIds.length === 0) return resultMap;
+
+  // iTunes Lookup API는 최대 200개 ID를 콤마(,)로 묶어 단 1회 호출 가능
+  const chunkSize = 150;
+  for (let i = 0; i < validIds.length; i += chunkSize) {
+    const chunk = validIds.slice(i, i + chunkSize);
+    try {
+      const lookupUrl = `https://itunes.apple.com/lookup?id=${chunk.join(',')}&country=KR&lang=ko_kr`;
+      const res = await fetch(lookupUrl, {
+        signal: AbortSignal.timeout(6000),
+        cache: 'no-store',
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      for (const item of data.results || []) {
+        if (item.trackId && item.trackName) {
+          resultMap.set(Number(item.trackId), String(item.trackName).trim());
+        }
+      }
+    } catch {
+      // 한국 스토어 lookup 실패 시 무시하고 원본 유지
+    }
+  }
+
+  return resultMap;
+}
+
+// 밴드명 및 검색 별칭 기반 iTunes 정식 음원 리스트 탐색 (한국 스토어 공식 한글 곡명 병기 자동 적용)
 export async function searchITunesTracksForArtist(
   artistName: string,
   searchAlias?: string | null
-): Promise<Array<{ trackName: string; artistName: string; primaryGenreName: string; previewUrl: string }>> {
+): Promise<
+  Array<{
+    trackId?: number;
+    trackName: string;
+    artistName: string;
+    primaryGenreName: string;
+    previewUrl: string;
+  }>
+> {
   const rawTerms = new Set<string>();
   if (searchAlias?.trim()) {
     rawTerms.add(searchAlias.trim());
@@ -104,13 +185,19 @@ export async function searchITunesTracksForArtist(
   }
 
   const BLACKLIST = ['inst', 'instrumental', 'mr', 'remix', 'ost', 'piano ver', 'acoustic ver', 'karaoke', '노래방'];
-  const collected: Array<{ trackName: string; artistName: string; primaryGenreName: string; previewUrl: string }> = [];
+  const collected: Array<{
+    trackId?: number;
+    trackName: string;
+    artistName: string;
+    primaryGenreName: string;
+    previewUrl: string;
+  }> = [];
   const seenTitles = new Set<string>();
 
   const norm = (s: string) => s.toLowerCase().replace(/[\s\-_.()[\]]+/g, '');
   const targetTokens = Array.from(rawTerms).map(norm).filter(Boolean);
 
-  for (const term of rawTerms) {
+  outerLoop: for (const term of rawTerms) {
     for (const countryParam of ['', '&country=JP']) {
       try {
         const url = `https://itunes.apple.com/search?term=${encodeURIComponent(
@@ -144,6 +231,7 @@ export async function searchITunesTracksForArtist(
 
           seenTitles.add(titleLower);
           collected.push({
+            trackId: item.trackId ? Number(item.trackId) : undefined,
             trackName: cleanTitle,
             artistName: item.artistName || artistName,
             primaryGenreName: item.primaryGenreName || 'Rock',
@@ -151,11 +239,23 @@ export async function searchITunesTracksForArtist(
           });
         }
 
-        if (collected.length >= 15) {
-          return collected;
+        if (collected.length >= 20) {
+          break outerLoop;
         }
       } catch {
         // 다음 검색어/스토어 시도
+      }
+    }
+  }
+
+  // 수집된 트랙들의 trackId로 한국 스토어(country=KR) 공식 한글 곡명 일괄 조회 및 '한글명 (영문명)' 병기 적용
+  const trackIds = collected.map((c) => c.trackId).filter((id): id is number => Boolean(id));
+  if (trackIds.length > 0) {
+    const krMap = await resolveKoreanTrackTitlesByTrackIds(trackIds);
+    for (const item of collected) {
+      if (item.trackId && krMap.has(item.trackId)) {
+        const krTitle = krMap.get(item.trackId)!;
+        item.trackName = formatLocalizedTrackTitle(krTitle, item.trackName);
       }
     }
   }
