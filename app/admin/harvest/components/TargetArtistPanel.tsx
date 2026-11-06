@@ -146,7 +146,7 @@ export default function TargetArtistPanel({
                     <span className={`font-bold block truncate ${artist.priority === 3 ? 'text-slate-400' : 'text-slate-200'}`}>
                       {artist.name}
                     </span>
-                    {artist.search_alias && artist.search_alias !== artist.name && (
+                    {artist.search_alias && (
                       <span className="text-[10px] text-indigo-400/80 truncate">
                         ({artist.search_alias})
                       </span>
