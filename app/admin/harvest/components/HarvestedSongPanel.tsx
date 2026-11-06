@@ -11,6 +11,7 @@ import {
   Search,
   Play,
   ExternalLink,
+  X,
 } from 'lucide-react';
 import { SongItem } from '../types';
 
@@ -24,6 +25,7 @@ interface HarvestedSongPanelProps {
   loading: boolean;
   searchSongQuery: string;
   onToggleSongPanel: () => void;
+  onClearArtistFilter: () => void;
   onDeleteSelectedSongs: () => void;
   onToggleSelectAll: () => void;
   onChangeSearchQuery: (val: string) => void;
@@ -41,6 +43,7 @@ export default function HarvestedSongPanel({
   loading,
   searchSongQuery,
   onToggleSongPanel,
+  onClearArtistFilter,
   onDeleteSelectedSongs,
   onToggleSelectAll,
   onChangeSearchQuery,
@@ -56,15 +59,23 @@ export default function HarvestedSongPanel({
       } bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3 transition-all`}
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-800/60 pb-3">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-1.5">
             <h2 className="text-sm font-bold flex items-center gap-1.5 text-slate-200">
               <Music2 className="w-4 h-4 text-purple-400" />
               수집 음원 ({filteredSongs.length}곡)
-              {selectedArtist !== 'ALL' && (
-                <span className="text-indigo-400 text-xs">({selectedArtist})</span>
-              )}
             </h2>
+            {selectedArtist !== 'ALL' && (
+              <button
+                type="button"
+                onClick={onClearArtistFilter}
+                title="밴드 필터 해제 (전체 음원 보기)"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-950/90 hover:bg-indigo-900 text-indigo-300 hover:text-white border border-indigo-700/80 text-[11px] font-bold transition shadow-sm"
+              >
+                <span>필터: {selectedArtist}</span>
+                <X className="w-3 h-3 text-indigo-400 hover:text-rose-300" />
+              </button>
+            )}
             <button
               type="button"
               onClick={onToggleSongPanel}
@@ -116,8 +127,18 @@ export default function HarvestedSongPanel({
                 value={searchSongQuery}
                 onChange={(e) => onChangeSearchQuery(e.target.value)}
                 placeholder="곡명 또는 밴드 검색..."
-                className="bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full sm:w-48"
+                className="bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-7 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full sm:w-48"
               />
+              {searchSongQuery && (
+                <button
+                  type="button"
+                  onClick={() => onChangeSearchQuery('')}
+                  title="검색어 지우기"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
         )}

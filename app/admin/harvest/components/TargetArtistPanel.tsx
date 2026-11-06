@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Radio, ChevronLeft, ChevronRight, Plus, Sparkles, Trash2, Info } from 'lucide-react';
+import { Radio, ChevronLeft, ChevronRight, Plus, Sparkles, Trash2, Info, X } from 'lucide-react';
 import { TargetArtist } from '../types';
 
 interface TargetArtistPanelProps {
@@ -46,9 +46,15 @@ export default function TargetArtistPanel({
           <span>밴드 목록 펼치기 ({artists.length})</span>
         </button>
         {selectedArtist !== 'ALL' && (
-          <span className="text-[10px] px-2 py-1 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 text-center">
-            필터: {selectedArtist}
-          </span>
+          <button
+            type="button"
+            onClick={() => onSelectArtist('ALL')}
+            title="밴드 필터 해제"
+            className="text-[10px] flex items-center justify-center gap-1 px-2 py-1 rounded bg-indigo-950 hover:bg-indigo-900 text-indigo-300 hover:text-white border border-indigo-800 text-center transition"
+          >
+            <span>필터: {selectedArtist}</span>
+            <X className="w-3 h-3 text-indigo-400" />
+          </button>
         )}
       </div>
     );
@@ -105,7 +111,7 @@ export default function TargetArtistPanel({
             return (
               <div
                 key={artist.id}
-                onClick={() => onSelectArtist(artist.name)}
+                onClick={() => onSelectArtist(isSelected ? 'ALL' : artist.name)}
                 className={`p-2.5 rounded-xl border text-xs cursor-pointer transition flex items-center justify-between group ${
                   isSelected
                     ? 'bg-indigo-950/70 border-indigo-700 text-indigo-200'

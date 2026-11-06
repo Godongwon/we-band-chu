@@ -863,6 +863,7 @@ export default function HarvestAdminPage() {
             loading={loading}
             searchSongQuery={searchSongQuery}
             onToggleSongPanel={() => setIsSongPanelOpen((prev) => !prev)}
+            onClearArtistFilter={() => setSelectedArtist('ALL')}
             onDeleteSelectedSongs={handleDeleteSelectedSongs}
             onToggleSelectAll={() => toggleSelectAll(filteredSongs)}
             onChangeSearchQuery={setSearchSongQuery}
