@@ -5,6 +5,8 @@ import {
   Music2,
   ChevronUp,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Trash2,
   CheckSquare,
   Square,
@@ -66,9 +68,18 @@ export default function HarvestedSongPanel({
   onDeleteSong,
 }: HarvestedSongPanelProps) {
   const isAllSelected = filteredSongs.length > 0 && selectedSongIds.size === filteredSongs.length;
-  const topGenres = availableGenres.slice(0, 12);
+  const topGenres = availableGenres.slice(0, 24);
   const isOtherSelected =
     selectedGenre !== 'ALL' && !topGenres.some(([g]) => g === selectedGenre);
+
+  // 장르 칩 가로 스크롤 Ref & 핸들러
+  const genreScrollRef = useRef<HTMLDivElement | null>(null);
+  const handleScrollGenres = (direction: 'left' | 'right') => {
+    if (genreScrollRef.current) {
+      const scrollAmount = direction === 'left' ? -240 : 240;
+      genreScrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
 
   // 30초 음원 미리듣기 상태
   const [playingSongId, setPlayingSongId] = useState<string | null>(null);
@@ -268,72 +279,99 @@ export default function HarvestedSongPanel({
         )}
       </div>
 
-      {/* 장르별 필터링 바 (상위 주요 장르 칩 + 전체 장르 드롭다운 선택기) */}
+      {/* 장르별 필터링 바 (스크롤바 제거 + 좌우 화살표 버튼 탐색 + 고정 드롭다운) */}
       {isSongPanelOpen && (
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 text-xs border-b border-slate-800/40">
-          <span className="text-[11px] font-bold text-slate-400 shrink-0 flex items-center gap-1 pl-0.5">
+        <div className="flex items-center gap-1.5 border-b border-slate-800/50 pb-2 pt-0.5 text-xs">
+          {/* 좌측 고정 라벨 */}
+          <div className="flex items-center gap-1 pl-0.5 shrink-0">
             <Filter className="w-3.5 h-3.5 text-purple-400" />
-            <span>장르 필터:</span>
-          </span>
+            <span className="text-[11px] font-bold text-slate-400 whitespace-nowrap">장르 필터:</span>
+          </div>
 
-          {/* 전체 버튼 */}
+          {/* 좌측 스크롤 화살표 버튼 */}
           <button
             type="button"
-            onClick={() => onSelectGenre('ALL')}
-            className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold transition shrink-0 ${
-              selectedGenre === 'ALL'
-                ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
-                : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-            }`}
+            onClick={() => handleScrollGenres('left')}
+            title="이전 장르 보기"
+            className="shrink-0 p-1 rounded-lg bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-purple-300 transition shadow-sm"
           >
-            전체 ({availableGenres.reduce((acc, cur) => acc + cur[1], 0)})
+            <ChevronLeft className="w-3.5 h-3.5" />
           </button>
 
-          {/* 상위 주요 장르 칩 (상위 12개) */}
-          {topGenres.map(([genre, count]) => {
-            const isSelected = selectedGenre === genre;
-            return (
-              <button
-                key={genre}
-                type="button"
-                onClick={() => onSelectGenre(genre)}
-                className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold transition shrink-0 flex items-center gap-1 ${
-                  isSelected
-                    ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
-                    : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                }`}
-              >
-                <span>{genre}</span>
-                <span className={`text-[10px] ${isSelected ? 'text-purple-200' : 'text-slate-500'}`}>
-                  ({count})
-                </span>
-              </button>
-            );
-          })}
-
-          {/* 선택된 장르가 상위 12개 외의 장르일 경우 현재 선택 칩 표시 */}
-          {isOtherSelected && (
+          {/* 중앙 장르 칩 컨테이너 (스크롤바 완전 숨김) */}
+          <div
+            ref={genreScrollRef}
+            className="flex items-center gap-1.5 overflow-x-auto scroll-smooth min-w-0 flex-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden py-0.5"
+          >
+            {/* 전체 버튼 */}
             <button
               type="button"
-              onClick={() => onSelectGenre(selectedGenre)}
-              className="px-2.5 py-1 rounded-full border text-[11px] font-semibold bg-purple-600 text-white border-purple-500 shadow-sm shrink-0 flex items-center gap-1"
+              onClick={() => onSelectGenre('ALL')}
+              className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold transition shrink-0 ${
+                selectedGenre === 'ALL'
+                  ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
+                  : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              }`}
             >
-              <span>{selectedGenre}</span>
-              <span className="text-[10px] text-purple-200">
-                ({availableGenres.find(([g]) => g === selectedGenre)?.[1] || 0})
-              </span>
+              전체 ({availableGenres.reduce((acc, cur) => acc + cur[1], 0)})
             </button>
-          )}
 
-          {/* 전체 장르 드롭다운 선택기 */}
+            {/* 주요 장르 칩들 */}
+            {topGenres.map(([genre, count]) => {
+              const isSelected = selectedGenre === genre;
+              return (
+                <button
+                  key={genre}
+                  type="button"
+                  onClick={() => onSelectGenre(genre)}
+                  className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold transition shrink-0 flex items-center gap-1 ${
+                    isSelected
+                      ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
+                      : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  }`}
+                >
+                  <span>{genre}</span>
+                  <span className={`text-[10px] ${isSelected ? 'text-purple-200' : 'text-slate-500'}`}>
+                    ({count})
+                  </span>
+                </button>
+              );
+            })}
+
+            {/* 선택된 장르가 상위 목록 외일 경우 활성 칩 표시 */}
+            {isOtherSelected && (
+              <button
+                type="button"
+                onClick={() => onSelectGenre(selectedGenre)}
+                className="px-2.5 py-1 rounded-full border text-[11px] font-semibold bg-purple-600 text-white border-purple-500 shadow-sm shrink-0 flex items-center gap-1"
+              >
+                <span>{selectedGenre}</span>
+                <span className="text-[10px] text-purple-200">
+                  ({availableGenres.find(([g]) => g === selectedGenre)?.[1] || 0})
+                </span>
+              </button>
+            )}
+          </div>
+
+          {/* 우측 스크롤 화살표 버튼 */}
+          <button
+            type="button"
+            onClick={() => handleScrollGenres('right')}
+            title="다음 장르 보기"
+            className="shrink-0 p-1 rounded-lg bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-purple-300 transition shadow-sm"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+
+          {/* 우측 고정 전체 장르 드롭다운 선택기 */}
           {availableGenres.length > 0 && (
-            <div className="relative inline-flex items-center shrink-0 ml-auto">
+            <div className="relative inline-flex items-center shrink-0">
               <select
                 value={selectedGenre}
                 onChange={(e) => onSelectGenre(e.target.value)}
                 className="appearance-none bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 text-[11px] font-medium rounded-xl pl-2.5 pr-7 py-1 outline-none cursor-pointer focus:border-purple-500 transition"
               >
-                <option value="ALL">전체 장르 목록 ({availableGenres.length}개) ▾</option>
+                <option value="ALL">전체 목록 ({availableGenres.length}개) ▾</option>
                 {availableGenres.map(([g, count]) => (
                   <option key={g} value={g}>
                     {g} ({count}곡)
