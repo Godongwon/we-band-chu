@@ -86,6 +86,23 @@ export default function HarvestedSongPanel({
   const [loadingAudioSongId, setLoadingAudioSongId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // 렌더링 성능 최적화: 2500여 곡 대용량 DOM 렌더링 부하 방지 (초기 60곡 표시 후 점진적 로드)
+  const [visibleCount, setVisibleCount] = useState<number>(60);
+
+  // 검색어, 장르, 밴드 필터가 변경되면 표시 개수를 초기 60개로 리셋
+  useEffect(() => {
+    setVisibleCount(60);
+  }, [searchSongQuery, selectedGenre, selectedArtist]);
+
+  const handleScrollSongList = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    if (target.scrollHeight - target.scrollTop <= target.clientHeight + 250) {
+      if (visibleCount < filteredSongs.length) {
+        setVisibleCount((prev) => Math.min(prev + 60, filteredSongs.length));
+      }
+    }
+  };
+
   useEffect(() => {
     return () => {
       if (audioRef.current) {
@@ -416,8 +433,11 @@ export default function HarvestedSongPanel({
         ) : filteredSongs.length === 0 ? (
           <div className="p-12 text-center text-slate-500 text-xs">조건에 맞는 음원이 없습니다.</div>
         ) : (
-          <div className="space-y-2 max-h-[580px] overflow-y-auto pr-1">
-            {filteredSongs.map((song) => {
+          <div
+            className="space-y-2 max-h-[580px] overflow-y-auto pr-1"
+            onScroll={handleScrollSongList}
+          >
+            {filteredSongs.slice(0, visibleCount).map((song) => {
               const isChecked = selectedSongIds.has(song.id);
               const isPlaying = playingSongId === song.id;
               const isLoadingAudio = loadingAudioSongId === song.id;
@@ -582,6 +602,25 @@ export default function HarvestedSongPanel({
                 </div>
               );
             })}
+
+            {/* 대용량 렌더링 최적화: 스크롤 도달 시 자동 로드 및 수동 더보기 버튼 */}
+            {visibleCount < filteredSongs.length && (
+              <div className="pt-2 pb-1 text-center">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setVisibleCount((prev) => Math.min(prev + 60, filteredSongs.length))
+                  }
+                  className="px-4 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-xs font-semibold text-slate-300 hover:text-white transition shadow-sm inline-flex items-center gap-1.5"
+                >
+                  <span>
+                    {filteredSongs.length - visibleCount}곡 더 보기 ({visibleCount} /{' '}
+                    {filteredSongs.length}곡 표시 중)
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5 text-indigo-400" />
+                </button>
+              </div>
+            )}
           </div>
         )
       ) : (

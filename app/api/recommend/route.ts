@@ -77,10 +77,10 @@ export async function POST(req: Request) {
     const guitarCount = bandProfile?.guitar_count ?? 1;
     const hasKeys = bandProfile?.has_keys ?? true;
 
-    // 1. DB에서 전체 곡 조회
+    // 1. DB에서 전체 곡 조회 (성능 최적화: 필요한 필수 컬럼만 선별 조회하여 네트워크 및 메모리 대역폭 절감)
     const { data: songs, error } = await supabase
       .from('songs')
-      .select('*')
+      .select('id, title, artist, genre, bpm, original_key, vocal_gender, preview_url, youtube_url, created_at')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
