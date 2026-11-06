@@ -164,12 +164,26 @@ const CURATED_BAND_POOL: DiscoveredArtistCandidate[] = [
   },
 ];
 
-function normalizeKey(str: string): string {
-  return str
-    .toLowerCase()
+function extractNormalizedKeys(str: string): string[] {
+  if (!str) return [];
+  const lower = str.toLowerCase().trim();
+  const keys = new Set<string>();
+
+  const fullClean = lower.replace(/[^a-z0-9가-힣ぁ-んァ-ヶ一-龯]/g, '');
+  if (fullClean) keys.add(fullClean);
+
+  const withoutParens = lower
     .replace(/\s*\(.*?\)\s*/g, '')
-    .replace(/[^a-z0-9가-힣ぁ-んァ-ヶ一-龯]/g, '')
-    .trim();
+    .replace(/[^a-z0-9가-힣ぁ-んァ-ヶ一-龯]/g, '');
+  if (withoutParens) keys.add(withoutParens);
+
+  const parenMatch = lower.match(/\((.*?)\)/);
+  if (parenMatch && parenMatch[1]) {
+    const insideParen = parenMatch[1].replace(/[^a-z0-9가-힣ぁ-んァ-ヶ一-龯]/g, '');
+    if (insideParen) keys.add(insideParen);
+  }
+
+  return Array.from(keys);
 }
 
 export async function POST(req: Request) {
@@ -187,23 +201,27 @@ export async function POST(req: Request) {
 
     if (error) throw error;
 
-    const existingNames = (existingArtists || []).map((a) => a.name);
+    const existingNames = (existingArtists || []).map((a) =>
+      a.search_alias && a.search_alias !== a.name ? `${a.name} (${a.search_alias})` : a.name
+    );
     const existingSet = new Set<string>();
     for (const a of existingArtists || []) {
-      if (a.name) existingSet.add(normalizeKey(a.name));
-      if (a.search_alias) existingSet.add(normalizeKey(a.search_alias));
+      for (const k of extractNormalizedKeys(a.name || '')) existingSet.add(k);
+      for (const k of extractNormalizedKeys(a.search_alias || '')) existingSet.add(k);
     }
 
     const filterNewCandidates = (list: DiscoveredArtistCandidate[]) => {
       const seen = new Set<string>();
       const filtered: DiscoveredArtistCandidate[] = [];
       for (const item of list) {
-        const k1 = normalizeKey(item.name || '');
-        const k2 = normalizeKey(item.search_alias || '');
-        if (!k1 || existingSet.has(k1) || (k2 && existingSet.has(k2))) continue;
-        if (seen.has(k1) || (k2 && seen.has(k2))) continue;
-        seen.add(k1);
-        if (k2) seen.add(k2);
+        const keys = [
+          ...extractNormalizedKeys(item.name || ''),
+          ...extractNormalizedKeys(item.search_alias || ''),
+        ];
+        if (keys.length === 0) continue;
+        if (keys.some((k) => existingSet.has(k) || seen.has(k))) continue;
+
+        for (const k of keys) seen.add(k);
         filtered.push({
           name: String(item.name).trim(),
           search_alias: String(item.search_alias || item.name).trim(),
@@ -298,15 +316,18 @@ ${customPrompt ? `추가 검색 요청사항: "${customPrompt}"` : ''}
       for (const item of toInsert) {
         const { data: inserted, error: insErr } = await supabase
           .from('target_artists')
-          .insert([
-            {
-              name: item.name,
-              search_alias: item.search_alias,
-              vocal_gender: item.vocal_gender,
-              priority: 1,
-              is_active: true,
-            },
-          ])
+          .upsert(
+            [
+              {
+                name: item.name,
+                search_alias: item.search_alias,
+                vocal_gender: item.vocal_gender,
+                priority: 1,
+                is_active: true,
+              },
+            ],
+            { onConflict: 'name' }
+          )
           .select()
           .single();
 

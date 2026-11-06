@@ -33,17 +33,57 @@ export async function POST(req: Request) {
         ? { search_alias: String(search_alias).trim(), vocal_gender }
         : await classifyArtistWithLLM(trimmedName);
 
+    // 1. 이미 동일한 이름(name) 또는 영문 별칭(search_alias)으로 등록된 밴드가 있는지 사전 확인
+    const { data: existingList } = await supabase
+      .from('target_artists')
+      .select('*')
+      .or(`name.ilike.${trimmedName},search_alias.ilike.${classified.search_alias}`);
+
+    const existingArtist = (existingList || []).find(
+      (a) =>
+        a.name?.trim().toLowerCase() === trimmedName.toLowerCase() ||
+        (classified.search_alias &&
+          a.search_alias?.trim().toLowerCase() === classified.search_alias.toLowerCase())
+    );
+
+    if (existingArtist) {
+      const { data: updated, error: updErr } = await supabase
+        .from('target_artists')
+        .update({
+          search_alias: classified.search_alias || existingArtist.search_alias,
+          vocal_gender: classified.vocal_gender || existingArtist.vocal_gender,
+          priority: Number(priority) || existingArtist.priority || 1,
+          is_active: true,
+        })
+        .eq('id', existingArtist.id)
+        .select()
+        .single();
+
+      if (updErr) throw updErr;
+
+      return NextResponse.json({
+        success: true,
+        alreadyExisted: true,
+        message: `'${existingArtist.name}' 밴드는 이미 등록되어 있어 우선순위 및 정보를 최신화했습니다.`,
+        artist: updated,
+      });
+    }
+
+    // 2. 신규 등록 (동시성 경합으로 인한 unique constraint 충돌 시에도 안전하게 upsert 처리)
     const { data, error } = await supabase
       .from('target_artists')
-      .insert([
-        {
-          name: trimmedName,
-          search_alias: classified.search_alias,
-          vocal_gender: classified.vocal_gender,
-          priority: Number(priority) || 1,
-          is_active: true,
-        },
-      ])
+      .upsert(
+        [
+          {
+            name: trimmedName,
+            search_alias: classified.search_alias,
+            vocal_gender: classified.vocal_gender,
+            priority: Number(priority) || 1,
+            is_active: true,
+          },
+        ],
+        { onConflict: 'name' }
+      )
       .select()
       .single();
 
