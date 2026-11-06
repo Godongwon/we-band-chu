@@ -16,20 +16,43 @@ export async function POST(req: Request) {
       );
     }
 
-    // 1. song_id가 없으면 DB에서 실제 UUID 탐색
+    // 1. song_id가 전달되었더라도 실제 songs 테이블에 존재하는지 확인 (외래키 제약조건 위반 방지)
     let finalSongId: string | null = null;
-    if (song_id && song_id.length > 10) {
-      finalSongId = song_id;
-    } else {
-      const { data: matchedSong } = await supabase
+
+    if (song_id && typeof song_id === 'string' && song_id.length > 10) {
+      const { data: verifiedSong } = await supabase
         .from('songs')
         .select('id')
-        .ilike('title', title.trim())
-        .limit(1)
+        .eq('id', song_id)
         .maybeSingle();
+
+      if (verifiedSong?.id) {
+        finalSongId = verifiedSong.id;
+      }
+    }
+
+    // 전달된 song_id가 실제 DB에 없거나 비어 있는 경우, title과 artist로 실제 song_id 조회
+    if (!finalSongId) {
+      let query = supabase.from('songs').select('id').ilike('title', title.trim());
+      if (artist?.trim()) {
+        query = query.ilike('artist', artist.trim());
+      }
+      const { data: matchedSong } = await query.limit(1).maybeSingle();
 
       if (matchedSong?.id) {
         finalSongId = matchedSong.id;
+      } else {
+        // artist 없이 title로만 재시도
+        const { data: fallbackSong } = await supabase
+          .from('songs')
+          .select('id')
+          .ilike('title', title.trim())
+          .limit(1)
+          .maybeSingle();
+
+        if (fallbackSong?.id) {
+          finalSongId = fallbackSong.id;
+        }
       }
     }
 
@@ -39,12 +62,8 @@ export async function POST(req: Request) {
       artist: artist.trim(),
       reason: reason?.trim() || '비밴드 곡 또는 잘못된 음원 정보',
       status: 'PENDING',
+      song_id: finalSongId || null,
     };
-
-    // 유효한 UUID일 때만 song_id 포함
-    if (finalSongId) {
-      insertPayload.song_id = finalSongId;
-    }
 
     const { data: inserted, error: insertError } = await supabase
       .from('song_reports')
