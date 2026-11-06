@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { searchITunesTracksForArtist, analyzePreviewAudio } from '@/lib/audioAnalyzer';
 
+export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 export async function GET() {

@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { classifyArtistWithLLM } from '@/lib/artistClassifier';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const { data: artists, error } = await supabase

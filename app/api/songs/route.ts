@@ -2,6 +2,8 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
+export const dynamic = 'force-dynamic';
+
 // ========================================================
 // 1. 음원 목록 및 단건 조회 (외래키 조인 에러 없는 안전 쿼리)
 // ========================================================

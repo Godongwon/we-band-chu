@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 import {
   TargetArtist,
   SongItem,
@@ -120,14 +121,21 @@ export default function HarvestAdminPage() {
     }
   }, []);
 
-  const refreshAllData = async () => {
-    setIsAutoRefreshing(true);
+  const isBackfillingRef = useRef<boolean>(false);
+
+  const refreshAllData = async (silent = false) => {
+    if (!silent) setIsAutoRefreshing(true);
     try {
-      await Promise.all([fetchArtists(), fetchSongs(), fetchReports(), fetchSuggestions()]);
+      await Promise.all([
+        fetchArtists(),
+        fetchSongs(silent),
+        fetchReports(),
+        fetchSuggestions(),
+      ]);
     } catch (e) {
       console.error('[자동 갱신 오류]:', e);
     } finally {
-      setIsAutoRefreshing(false);
+      if (!silent) setIsAutoRefreshing(false);
     }
   };
 
@@ -162,6 +170,9 @@ export default function HarvestAdminPage() {
 
   // 1분 주기 자동 오디오(BPM & Key) 실측 백필
   const runSilentBackfill = async () => {
+    if (isBackfillingRef.current) return;
+    isBackfillingRef.current = true;
+
     const nextPending = songs.find((s) => !s.bpm || !s.original_key);
     if (nextPending) {
       setCurrentAnalyzingSong({
@@ -175,7 +186,10 @@ export default function HarvestAdminPage() {
     setIsBackfilling(true);
 
     try {
-      const res = await fetch('/api/songs/backfill-audio', { method: 'POST' });
+      const res = await fetch('/api/songs/backfill-audio', {
+        method: 'POST',
+        cache: 'no-store',
+      });
       const data = await res.json();
       if (res.ok && data.success && data.updatedCount > 0) {
         const list: any[] = data.analyzedSongs || [];
@@ -189,6 +203,14 @@ export default function HarvestAdminPage() {
               original_key: item.original_key,
               status: i < list.length - 1 ? 'ANALYZING' : 'COMPLETED',
             });
+            // 각 곡이 분석될 때마다 화면의 songs 상태를 즉시 실시간 반영
+            setSongs((prev) =>
+              prev.map((s) =>
+                s.id === item.id
+                  ? { ...s, bpm: item.bpm, original_key: item.original_key }
+                  : s
+              )
+            );
             if (i < list.length - 1) {
               await new Promise((r) => setTimeout(r, 250));
             }
@@ -197,11 +219,12 @@ export default function HarvestAdminPage() {
         setLastMessage(
           `[1분 주기 자동 실측] ${data.updatedCount}곡 BPM/Key 산출 완료 (남은 대상: ${data.remainingCount || 0}곡)`
         );
-        await fetchSongs();
+        await fetchSongs(true);
       }
     } catch (e) {
       console.error('[자동 오디오 백필 오류]:', e);
     } finally {
+      isBackfillingRef.current = false;
       setIsBackfilling(false);
     }
   };
@@ -210,7 +233,7 @@ export default function HarvestAdminPage() {
   const runAutoHarvestCycle = async () => {
     setIsAutoRefreshing(true);
     try {
-      const syncRes = await fetch('/api/songs/sync');
+      const syncRes = await fetch('/api/songs/sync', { cache: 'no-store' });
       const syncData = await syncRes.json();
       if (syncRes.ok && syncData.success && syncData.lastExecution) {
         const { artist, count } = syncData.lastExecution;
@@ -219,7 +242,12 @@ export default function HarvestAdminPage() {
         }
       }
       await runSilentBackfill();
-      await Promise.all([fetchArtists(), fetchSongs(), fetchReports(), fetchSuggestions()]);
+      await Promise.all([
+        fetchArtists(),
+        fetchSongs(true),
+        fetchReports(),
+        fetchSuggestions(),
+      ]);
     } catch (e) {
       console.error('[2분 주기 자동 수집/갱신 오류]:', e);
     } finally {
@@ -227,38 +255,110 @@ export default function HarvestAdminPage() {
     }
   };
 
+  // 초기 로드 + Supabase Realtime 실시간 구독 + 15초 백그라운드 동기화 + 탭 포커스 갱신
   useEffect(() => {
     if (!isAuthenticated) return;
-    refreshAllData();
+    refreshAllData(false);
+
     const initBackfillTimer = setTimeout(() => {
       runSilentBackfill();
     }, 2000);
-    return () => clearTimeout(initBackfillTimer);
+
+    // 1. Supabase Realtime 구독 (DB 변경 발생 시 새로고침 없이 즉시 반영)
+    const realtimeChannel = supabase
+      .channel('admin-harvest-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'songs' },
+        (payload) => {
+          const newRow = payload.new as any;
+          if (newRow && newRow.id && (newRow.bpm || newRow.original_key)) {
+            setCurrentAnalyzingSong({
+              title: newRow.title,
+              artist: newRow.artist,
+              bpm: newRow.bpm,
+              original_key: newRow.original_key,
+              status: 'COMPLETED',
+            });
+          }
+          fetchSongs(true);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'target_artists' },
+        () => {
+          fetchArtists();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'song_reports' },
+        () => {
+          fetchReports();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'song_suggestions' },
+        () => {
+          fetchSuggestions();
+        }
+      )
+      .subscribe();
+
+    // 2. 15초 주기 무음 백그라운드 폴링 (Realtime 누락 대비 실시간 동기화 보장)
+    const fastSyncInterval = setInterval(() => {
+      refreshAllData(true);
+    }, 15000);
+
+    // 3. 브라우저 탭 복귀 시 즉시 최신화
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        refreshAllData(true);
+      }
+    };
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
+    return () => {
+      clearTimeout(initBackfillTimer);
+      clearInterval(fastSyncInterval);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      supabase.removeChannel(realtimeChannel);
+    };
   }, [isAuthenticated]);
 
+  // 1초 단위 카운트다운 타이머 (순수 카운터만 감소)
   useEffect(() => {
     if (!isAuthenticated) return;
 
     const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          runAutoHarvestCycle();
-          return REFRESH_INTERVAL_SECONDS;
-        }
-        // 1분(60초) 경과 시점마다 BPM & Key 실측 백필 실행
-        if ((prev - 1) % BACKFILL_INTERVAL_SECONDS === 0) {
-          runSilentBackfill();
-        }
-        return prev - 1;
-      });
+      setCountdown((prev) => (prev <= 0 ? REFRESH_INTERVAL_SECONDS : prev - 1));
     }, 1000);
 
     return () => clearInterval(timer);
   }, [isAuthenticated]);
 
+  // 카운트다운 값에 따른 주기 작업 트리거 (최신 state 참조 보장)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    if (countdown === 0) {
+      runAutoHarvestCycle();
+      setCountdown(REFRESH_INTERVAL_SECONDS);
+    } else if (
+      countdown < REFRESH_INTERVAL_SECONDS &&
+      countdown % BACKFILL_INTERVAL_SECONDS === 0
+    ) {
+      runSilentBackfill();
+    }
+  }, [countdown, isAuthenticated]);
+
   function handleManualRefreshNow() {
     setCountdown(REFRESH_INTERVAL_SECONDS);
-    refreshAllData();
+    refreshAllData(false);
   }
 
   async function handleVerify(e: React.FormEvent) {
@@ -286,7 +386,7 @@ export default function HarvestAdminPage() {
 
   async function fetchArtists() {
     try {
-      const res = await fetch('/api/artists');
+      const res = await fetch('/api/artists', { cache: 'no-store' });
       const data = await res.json();
       if (res.ok && data.artists) {
         setArtists(data.artists);
@@ -301,10 +401,12 @@ export default function HarvestAdminPage() {
     }
   }
 
-  async function fetchSongs() {
-    setLoading(true);
+  async function fetchSongs(silent = false) {
+    if (!silent && songs.length === 0) {
+      setLoading(true);
+    }
     try {
-      const res = await fetch('/api/songs?limit=5000');
+      const res = await fetch('/api/songs?limit=5000', { cache: 'no-store' });
       const data = await res.json();
       if (res.ok && data.songs) {
         setSongs(data.songs);
@@ -312,13 +414,15 @@ export default function HarvestAdminPage() {
     } catch (err: any) {
       console.error('[관리자] 곡 목록 로드 실패:', err.message);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }
 
   async function fetchReports() {
     try {
-      const res = await fetch('/api/admin/reports');
+      const res = await fetch('/api/admin/reports', { cache: 'no-store' });
       const data = await res.json();
       if (res.ok && data.reports) {
         setReports(data.reports);
@@ -330,7 +434,7 @@ export default function HarvestAdminPage() {
 
   async function fetchSuggestions() {
     try {
-      const res = await fetch('/api/songs/suggest');
+      const res = await fetch('/api/songs/suggest', { cache: 'no-store' });
       const data = await res.json();
       if (res.ok && data.suggestions) {
         setSuggestions(data.suggestions);
@@ -696,7 +800,7 @@ export default function HarvestAdminPage() {
     setLastMessage('다음 아티스트 곡 수집 파이프라인 가동 중...');
 
     try {
-      const res = await fetch('/api/songs/sync');
+      const res = await fetch('/api/songs/sync', { cache: 'no-store' });
       const data = await res.json();
 
       if (res.ok && data.success) {
@@ -705,7 +809,7 @@ export default function HarvestAdminPage() {
         setLastMessage(`${artist} ${count}곡 수집/분석 갱신 완료`);
         setCountdown(REFRESH_INTERVAL_SECONDS);
         await fetchArtists();
-        await fetchSongs();
+        await fetchSongs(true);
       } else {
         setLastMessage(`수집 실패: ${data.error || data.message || `HTTP ${res.status}`}`);
       }
@@ -733,7 +837,10 @@ export default function HarvestAdminPage() {
     setLastMessage('기존 수집곡 오디오 분석 백필 가동 중...');
 
     try {
-      const res = await fetch('/api/songs/backfill-audio', { method: 'POST' });
+      const res = await fetch('/api/songs/backfill-audio', {
+        method: 'POST',
+        cache: 'no-store',
+      });
       const data = await res.json();
 
       if (res.ok && data.success) {
@@ -748,6 +855,13 @@ export default function HarvestAdminPage() {
               original_key: item.original_key,
               status: i < list.length - 1 ? 'ANALYZING' : 'COMPLETED',
             });
+            setSongs((prev) =>
+              prev.map((s) =>
+                s.id === item.id
+                  ? { ...s, bpm: item.bpm, original_key: item.original_key }
+                  : s
+              )
+            );
             if (i < list.length - 1) {
               await new Promise((r) => setTimeout(r, 250));
             }
@@ -756,7 +870,7 @@ export default function HarvestAdminPage() {
         setLastMessage(
           `${data.updatedCount || 0}곡 분석 갱신됨 (남은 대상: ${data.remainingCount || 0}곡)`
         );
-        await fetchSongs();
+        await fetchSongs(true);
       } else {
         setLastMessage(`백필 실패: ${data.error || data.message || `HTTP ${res.status}`}`);
       }
