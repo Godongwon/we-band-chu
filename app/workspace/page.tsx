@@ -316,6 +316,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
       setSelectedSong(null);
     }
     setRecommendedSongs((prev) => prev.filter((s) => s.title !== song.title));
+    setSearchResults((prev) => prev.filter((s) => s.title !== song.title));
   }
 
   async function handleAddToRepertoire(song: SongItem) {
@@ -407,30 +408,37 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     );
   }
 
-  const isSearchActive = searchQuery.trim().length > 0;
-  const displaySongs = isSearchActive ? searchResults : recommendedSongs;
-
   return (
     <main className="min-h-screen bg-[#070913] text-slate-100 p-4 sm:p-6 font-sans">
       <div className="max-w-7xl mx-auto space-y-4">
         <WorkspaceToolbar
           bandProfile={bandProfile}
           searchQuery={searchQuery}
+          searchResults={searchResults}
+          isSearching={isSearching}
           onSearchQueryChange={setSearchQuery}
+          onSelectSong={setSelectedSong}
+          onAddToRepertoire={handleAddToRepertoire}
+          onReportSong={handleReportSong}
           onLogout={handleLogout}
           onOpenEditProfile={handleOpenEditProfile}
-          onOpenSuggest={() => setIsSuggestOpen(true)}
+          onOpenSuggest={() => {
+            if (searchQuery.trim() && !suggestTitle.trim()) {
+              setSuggestTitle(searchQuery.trim());
+            }
+            setIsSuggestOpen(true);
+          }}
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start pt-1">
           <RepertoirePanel repertoire={repertoire} onSelectSong={setSelectedSong} />
 
           <RecommendationPanel
-            isSearchActive={isSearchActive}
-            displaySongs={displaySongs}
+            isSearchActive={false}
+            displaySongs={recommendedSongs}
             activeTab={activeTab}
             loading={loading}
-            isSearching={isSearching}
+            isSearching={false}
             onChangeTab={setActiveTab}
             onRefresh={() => fetchRecommendations(activeTab, bandProfile, repertoire, true)}
             onSelectSong={setSelectedSong}
