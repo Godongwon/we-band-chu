@@ -2,11 +2,11 @@
   "crons": [
     {
       "path": "/api/songs/sync",
-      "schedule": "*/2 * * * *"
+      "schedule": "0 0 * * *"
     },
     {
       "path": "/api/songs/backfill-audio",
-      "schedule": "* * * * *"
+      "schedule": "30 0 * * *"
     }
   ]
 }
