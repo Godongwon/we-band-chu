@@ -10,6 +10,7 @@ export interface SongItem {
   has_live_performance?: boolean;
   has_instrument_cover?: boolean;
   youtube_url?: string;
+  vocal_gender?: string;
   reason?: string;
 }
 

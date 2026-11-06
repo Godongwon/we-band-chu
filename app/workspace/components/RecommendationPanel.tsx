@@ -140,12 +140,26 @@ export default function RecommendationPanel({
                   <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-800/60">
                     {song.genre || '록/밴드'}
                   </span>
+                  {song.reason && (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-950/80 text-indigo-300 border border-indigo-800/60">
+                      {song.reason}
+                    </span>
+                  )}
                 </div>
 
                 <div className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap">
                   <span>{song.artist}</span>
                   <span>•</span>
-                  <span>{song.original_key ? `${song.original_key} Key` : (song.recommended_key || '원키 유지')}</span>
+                  <span>
+                    {song.original_key &&
+                    song.recommended_key &&
+                    song.recommended_key !== song.original_key &&
+                    song.recommended_key !== '원키 유지'
+                      ? `원키 ${song.original_key} → 추천 ${song.recommended_key}`
+                      : song.original_key
+                      ? `${song.original_key} Key`
+                      : song.recommended_key || '원키 유지'}
+                  </span>
                   <span>•</span>
                   <span>{song.bpm}bpm</span>
                 </div>

@@ -133,16 +133,28 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
     restoreSessionAndRepertoire();
   }, [currentBand]);
 
-  async function fetchRecommendations(tabKey: string = activeTab, profile = bandProfile) {
+  async function fetchRecommendations(
+    tabKey: string = activeTab,
+    profile = bandProfile,
+    currentRep = repertoire,
+    isManualRefresh = false
+  ) {
     setLoading(true);
     try {
+      const recentIds = isManualRefresh
+        ? recommendedSongs.map((s) => s.id).filter(Boolean)
+        : [];
+
       const res = await fetch('/api/recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
         body: JSON.stringify({
           category: tabKey,
           bandProfile: profile,
-          excludeTitles: repertoire.map((r) => r.title),
+          repertoireSongs: currentRep,
+          excludeTitles: currentRep.map((r) => r.title),
+          recentRecommendedIds: recentIds,
         }),
       });
 
@@ -159,7 +171,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
 
   useEffect(() => {
     if (!isAuthChecking) {
-      fetchRecommendations(activeTab);
+      fetchRecommendations(activeTab, bandProfile, repertoire, false);
     }
   }, [activeTab, isAuthChecking]);
 
@@ -420,7 +432,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
             loading={loading}
             isSearching={isSearching}
             onChangeTab={setActiveTab}
-            onRefresh={() => fetchRecommendations()}
+            onRefresh={() => fetchRecommendations(activeTab, bandProfile, repertoire, true)}
             onSelectSong={setSelectedSong}
             onAddToRepertoire={handleAddToRepertoire}
             onReportSong={handleReportSong}
