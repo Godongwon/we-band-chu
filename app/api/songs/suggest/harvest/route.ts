@@ -7,6 +7,7 @@ import {
   resolveKoreanTrackTitlesByTrackIds,
   formatLocalizedTrackTitle,
 } from '@/lib/audioAnalyzer';
+import { normalizeGenre } from '@/lib/genreUtils';
 
 export const maxDuration = 60;
 
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
       const previewSong = {
         title: resolvedTitle,
         artist: match?.artistName || artist,
-        genre: match?.primaryGenreName || 'Rock',
+        genre: normalizeGenre(match?.primaryGenreName),
         preview_url: previewUrl,
         youtube_url: youtubeUrl,
         bpm: analyzedBpm,
@@ -106,7 +107,7 @@ export async function POST(req: Request) {
       const insertPayload: any = {
         title: song_data.title,
         artist: song_data.artist,
-        genre: song_data.genre || 'Rock',
+        genre: normalizeGenre(song_data.genre),
         youtube_url: song_data.youtube_url || null,
         bpm: song_data.bpm || null,
         original_key: song_data.original_key || null,

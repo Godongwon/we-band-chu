@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { searchITunesTracksForArtist, analyzePreviewAudio } from '@/lib/audioAnalyzer';
+import { normalizeGenre } from '@/lib/genreUtils';
 
 export const maxDuration = 60;
 
@@ -60,7 +61,7 @@ export async function GET() {
           title: t.trackName,
           artist: currentArtist.name,
           artist_id: currentArtist.id,
-          genre: t.primaryGenreName || 'Rock',
+          genre: normalizeGenre(t.primaryGenreName),
           preview_url: t.previewUrl,
           youtube_url: `https://www.youtube.com/results?search_query=${encodeURIComponent(
             `${currentArtist.name} ${t.trackName}`
