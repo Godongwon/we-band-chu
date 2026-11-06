@@ -1214,10 +1214,16 @@ export default function HarvestAdminPage() {
     }
   }
 
-  async function handleBackfillAudio() {
-    if (!confirm('기존 곡들의 오디오(BPM & Key) 실측 백필을 진행하시겠습니까? (최대 10곡씩 순차 처리)'))
+  async function handleAuditSongs() {
+    if (
+      !confirm(
+        '모든 수집 음원의 30초 오디오 스트림을 재분석하여 BPM 및 조성을 재산출하시겠습니까?\n\n(BPM 및 조성이 이미 산출된 곡도 최신 알고리즘으로 10곡씩 순차 점검 및 갱신합니다)'
+      )
+    ) {
       return;
-    const nextPending = songs.find((s) => !s.bpm || !s.original_key);
+    }
+
+    const nextPending = songs[0];
     if (nextPending) {
       setCurrentAnalyzingSong({
         title: nextPending.title,
@@ -1228,11 +1234,13 @@ export default function HarvestAdminPage() {
       });
     }
     setIsBackfilling(true);
-    setLastMessage('기존 수집곡 오디오 분석 백필 가동 중...');
+    setLastMessage('수집음원 정밀 점검 및 BPM/조성 재산출 가동 중...');
 
     try {
       const res = await fetch('/api/songs/backfill-audio', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: true }),
         cache: 'no-store',
       });
       const data = await res.json();
@@ -1257,19 +1265,19 @@ export default function HarvestAdminPage() {
               )
             );
             if (i < list.length - 1) {
-              await new Promise((r) => setTimeout(r, 250));
+              await new Promise((r) => setTimeout(r, 200));
             }
           }
         }
         setLastMessage(
-          `${data.updatedCount || 0}곡 분석 갱신됨 (남은 대상: ${data.remainingCount || 0}곡)`
+          `[수집음원 점검 완료] ${data.updatedCount || 0}곡의 BPM 및 조성이 성공적으로 재산출되었습니다.`
         );
         await fetchSongs(true);
       } else {
-        setLastMessage(`백필 실패: ${data.error || data.message || `HTTP ${res.status}`}`);
+        setLastMessage(`점검 실패: ${data.error || data.message || `HTTP ${res.status}`}`);
       }
     } catch (err: any) {
-      setLastMessage(`백필 오류: ${err.message}`);
+      setLastMessage(`점검 오류: ${err.message}`);
     } finally {
       setIsBackfilling(false);
     }
@@ -1328,13 +1336,11 @@ export default function HarvestAdminPage() {
           isCleaning={isCleaning}
           isBackfilling={isBackfilling}
           isLocalizingTitles={isLocalizingTitles}
-          triggering={triggering}
           onOpenSuggestions={() => setIsSuggestionsOpen(true)}
           onOpenReports={() => setIsReportsOpen(true)}
           onCleanupNonBand={handleCleanupNonBand}
-          onBackfillAudio={handleBackfillAudio}
+          onAuditSongs={handleAuditSongs}
           onLocalizeTitles={handleLocalizeSongTitles}
-          onTriggerNow={handleTriggerNow}
         />
 
         <AdminStatsGrid

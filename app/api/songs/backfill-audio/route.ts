@@ -5,11 +5,17 @@ import { fetchPreviewUrl, analyzePreviewAudio } from '@/lib/audioAnalyzer';
 
 export const maxDuration = 60;
 
-async function runBackfillBatch() {
-  const { data: targetSongs, error: fetchErr } = await supabase
+async function runBackfillBatch(isForceAll = false) {
+  let query = supabase
     .from('songs')
-    .select('id, title, artist, bpm, original_key, preview_url')
-    .or('bpm.is.null,original_key.is.null')
+    .select('id, title, artist, bpm, original_key, preview_url');
+
+  if (!isForceAll) {
+    query = query.or('bpm.is.null,original_key.is.null');
+  }
+
+  const { data: targetSongs, error: fetchErr } = await query
+    .order('created_at', { ascending: false })
     .limit(10);
 
   if (fetchErr) throw fetchErr;
@@ -37,8 +43,8 @@ async function runBackfillBatch() {
     const previewUrl = (song as any).preview_url || (await fetchPreviewUrl(song.title, song.artist));
     const analyzed = await analyzePreviewAudio(previewUrl, `${song.artist}-${song.title}`);
 
-    const detectedBpm = song.bpm || analyzed.bpm;
-    const detectedKey = song.original_key || analyzed.key;
+    const detectedBpm = isForceAll ? (analyzed.bpm || song.bpm || 120) : (song.bpm || analyzed.bpm);
+    const detectedKey = isForceAll ? (analyzed.key || song.original_key || 'C') : (song.original_key || analyzed.key);
 
     const updatePayload: any = {
       bpm: detectedBpm,
@@ -78,9 +84,11 @@ async function runBackfillBatch() {
   };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const result = await runBackfillBatch();
+    const { searchParams } = new URL(req.url);
+    const isForceAll = searchParams.get('force') === 'true';
+    const result = await runBackfillBatch(isForceAll);
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('[백필 API GET 에러]:', error.message);
@@ -91,9 +99,69 @@ export async function GET() {
   }
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
-    const result = await runBackfillBatch();
+    let isForceAll = false;
+    let songIds: string[] | null = null;
+    try {
+      const body = await req.json();
+      if (body?.force !== undefined) isForceAll = Boolean(body.force);
+      if (Array.isArray(body?.songIds)) songIds = body.songIds;
+    } catch {
+      // Body 없는 경우 기본값
+    }
+
+    if (songIds && songIds.length > 0) {
+      const { data: targetSongs, error: fetchErr } = await supabase
+        .from('songs')
+        .select('id, title, artist, bpm, original_key, preview_url')
+        .in('id', songIds.slice(0, 20));
+
+      if (fetchErr) throw fetchErr;
+
+      let updatedCount = 0;
+      const analyzedSongs: any[] = [];
+
+      for (const song of targetSongs || []) {
+        const previewUrl = song.preview_url || (await fetchPreviewUrl(song.title, song.artist));
+        const analyzed = await analyzePreviewAudio(previewUrl, `${song.artist}-${song.title}`);
+
+        const detectedBpm = analyzed.bpm || song.bpm || 120;
+        const detectedKey = analyzed.key || song.original_key || 'C';
+
+        const updatePayload: any = {
+          bpm: detectedBpm,
+          original_key: detectedKey,
+        };
+        if (previewUrl && !song.preview_url) {
+          updatePayload.preview_url = previewUrl;
+        }
+
+        const { error: updErr } = await supabase
+          .from('songs')
+          .update(updatePayload)
+          .eq('id', song.id);
+
+        if (!updErr) {
+          updatedCount++;
+          analyzedSongs.push({
+            id: song.id,
+            title: song.title,
+            artist: song.artist,
+            bpm: detectedBpm,
+            original_key: detectedKey,
+          });
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        updatedCount,
+        analyzedSongs,
+      });
+    }
+
+    const result = await runBackfillBatch(isForceAll);
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('[백필 API POST 에러]:', error.message);

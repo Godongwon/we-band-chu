@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   LogOut,
   Users,
@@ -12,6 +12,7 @@ import {
   Plus,
   AlertCircle,
   Check,
+  Bot,
 } from 'lucide-react';
 import { BandProfile, SongItem, getSongCompositeKey } from '../types';
 import { REPERTOIRE_STATUS_OPTIONS } from './RepertoirePanel';
@@ -46,6 +47,56 @@ export default function WorkspaceToolbar({
   onOpenSuggest,
 }: WorkspaceToolbarProps) {
   const isSearchActive = searchQuery.trim().length > 0;
+
+  // AI 밴드평가 상태 (로컬 스토리지 캐싱 + 비동기 LLM 생성)
+  const [bandEvaluation, setBandEvaluation] = useState<string>('');
+  const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
+  const lastEvalKeyRef = useRef<string>('');
+
+  const evalStorageKey = useMemo(() => {
+    const repTitles = repertoire.map((r) => r.title).sort().join(',');
+    return `eval_${bandProfile.name}_${bandProfile.vocal_gender}_${bandProfile.guitar_count}_${bandProfile.has_keys}_${repTitles}`;
+  }, [bandProfile, repertoire]);
+
+  const fetchBandEvaluation = async (force = false) => {
+    if (!force) {
+      const cached = localStorage.getItem(evalStorageKey);
+      if (cached) {
+        setBandEvaluation(cached);
+        return;
+      }
+    }
+
+    if (lastEvalKeyRef.current === evalStorageKey && !force) return;
+    lastEvalKeyRef.current = evalStorageKey;
+
+    setIsEvaluating(true);
+    try {
+      const res = await fetch('/api/band/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bandProfile,
+          repertoire,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.evaluation) {
+        setBandEvaluation(data.evaluation);
+        localStorage.setItem(evalStorageKey, data.evaluation);
+      }
+    } catch (e) {
+      console.error('[AI 밴드평가 생성 오류]:', e);
+    } finally {
+      setIsEvaluating(false);
+    }
+  };
+
+  useEffect(() => {
+    if (bandProfile?.name) {
+      fetchBandEvaluation(false);
+    }
+  }, [evalStorageKey]);
 
   // 레퍼토리에 담긴 곡 빠른 조회 맵 (고유 id 및 '제목:::아티스트' 복합키 기준 - 동명이곡 오매칭 원천 차단)
   const repertoireLookup = useMemo(() => {
@@ -88,41 +139,80 @@ export default function WorkspaceToolbar({
       </header>
 
       {/* 밴드 프로필 & 액션 툴바 */}
-      <div className="bg-[#0b0e20]/80 border border-slate-800/80 rounded-2xl p-3 sm:px-4 sm:py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
-        <div className="flex items-center gap-2 flex-wrap text-xs">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-950/70 border border-indigo-800/80 text-indigo-200 font-bold">
-            <Users className="w-3.5 h-3.5 text-indigo-400" />
-            <span>{bandProfile.name}</span>
+      <div className="bg-[#0b0e20]/80 border border-slate-800/80 rounded-2xl p-3 sm:px-4 sm:py-3 space-y-2.5 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-950/70 border border-indigo-800/80 text-indigo-200 font-bold">
+              <Users className="w-3.5 h-3.5 text-indigo-400" />
+              <span>{bandProfile.name}</span>
+            </div>
+            <span className="text-slate-600 hidden sm:inline">•</span>
+            <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
+              {bandProfile.vocal_gender === 'FEMALE'
+                ? '여성 보컬'
+                : bandProfile.vocal_gender === 'COED'
+                ? '혼성 보컬'
+                : '남성 보컬'}
+            </span>
+            <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
+              {bandProfile.guitar_count}기타
+            </span>
+            <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
+              {bandProfile.has_keys ? '건반 O' : '건반 X'}
+            </span>
+
+            <button
+              type="button"
+              onClick={onOpenEditProfile}
+              className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-700/80 text-slate-300 hover:text-white hover:border-indigo-500 hover:bg-slate-800 transition flex items-center gap-1"
+            >
+              <Settings2 className="w-3 h-3 text-indigo-400" />
+              <span>구성 수정</span>
+            </button>
           </div>
-          <span className="text-slate-600 hidden sm:inline">•</span>
-          <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
-            {bandProfile.vocal_gender === 'FEMALE' ? '여성 보컬' : '남성 보컬'}
-          </span>
-          <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
-            {bandProfile.guitar_count}기타
-          </span>
-          <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
-            {bandProfile.has_keys ? '건반 O' : '건반 X'}
-          </span>
 
           <button
             type="button"
-            onClick={onOpenEditProfile}
-            className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-700/80 text-slate-300 hover:text-white hover:border-indigo-500 hover:bg-slate-800 transition flex items-center gap-1"
+            onClick={onOpenSuggest}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold transition shadow"
           >
-            <Settings2 className="w-3 h-3 text-indigo-400" />
-            <span>구성 수정</span>
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>곡 제보하기</span>
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={onOpenSuggest}
-          className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold transition shadow"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>곡 제보하기</span>
-        </button>
+        {/* AI의 밴드평가 (요청하신 사진 하단 위치) */}
+        <div className="pt-2 border-t border-slate-800/60 flex items-start gap-2 text-xs">
+          <div className="flex items-center gap-1 shrink-0 text-indigo-400 font-bold bg-indigo-950/70 border border-indigo-800/70 px-2 py-0.5 rounded-md mt-0.5">
+            <Bot className="w-3 h-3 text-indigo-300" />
+            <span className="text-[11px] whitespace-nowrap">AI의 밴드평가 :</span>
+          </div>
+
+          <div className="flex-1 text-slate-300 text-[11px] leading-relaxed break-keep">
+            {isEvaluating ? (
+              <span className="text-slate-500 animate-pulse flex items-center gap-1.5">
+                <RefreshCw className="w-3 h-3 animate-spin text-indigo-400" />
+                <span>우리 밴드의 악기 구성 및 레퍼토리 노래방향성을 분석하고 있습니다...</span>
+              </span>
+            ) : bandEvaluation ? (
+              <div className="flex items-start justify-between gap-2">
+                <span>{bandEvaluation}</span>
+                <button
+                  type="button"
+                  onClick={() => fetchBandEvaluation(true)}
+                  title="AI 밴드평가 새로고침"
+                  className="text-slate-500 hover:text-indigo-300 p-0.5 shrink-0 transition"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <span className="text-slate-500">
+                악기 구성과 레퍼토리를 기반으로 AI가 밴드의 노래 방향성과 추천 장르를 분석합니다.
+              </span>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* 곡 검색창 + 검색창 바로 아래 실시간 검색 결과 패널 */}

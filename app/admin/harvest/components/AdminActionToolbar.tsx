@@ -9,13 +9,11 @@ interface AdminActionToolbarProps {
   isCleaning: boolean;
   isBackfilling: boolean;
   isLocalizingTitles?: boolean;
-  triggering: boolean;
   onOpenSuggestions: () => void;
   onOpenReports: () => void;
   onCleanupNonBand: () => void;
-  onBackfillAudio: () => void;
+  onAuditSongs: () => void;
   onLocalizeTitles?: () => void;
-  onTriggerNow: () => void;
 }
 
 export default function AdminActionToolbar({
@@ -24,13 +22,11 @@ export default function AdminActionToolbar({
   isCleaning,
   isBackfilling,
   isLocalizingTitles = false,
-  triggering,
   onOpenSuggestions,
   onOpenReports,
   onCleanupNonBand,
-  onBackfillAudio,
+  onAuditSongs,
   onLocalizeTitles,
-  onTriggerNow,
 }: AdminActionToolbarProps) {
   return (
     <div className="flex items-center justify-start gap-2.5 flex-wrap bg-slate-900/40 border border-slate-800/60 p-2.5 rounded-2xl">
@@ -72,16 +68,6 @@ export default function AdminActionToolbar({
         비밴드 음원 정리
       </button>
 
-      <button
-        type="button"
-        disabled={isBackfilling}
-        onClick={onBackfillAudio}
-        className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-purple-800/80 px-3.5 py-2 rounded-xl text-xs text-purple-300 font-semibold shadow transition disabled:opacity-50 shrink-0"
-      >
-        <Sparkles className={`w-3.5 h-3.5 ${isBackfilling ? 'animate-spin' : ''}`} />
-        기존곡 오디오 백필
-      </button>
-
       {onLocalizeTitles && (
         <button
           type="button"
@@ -95,14 +81,16 @@ export default function AdminActionToolbar({
         </button>
       )}
 
+      {/* 수집음원 점검: 모든 수집곡의 오디오를 재스캔하여 BPM 및 조성을 재산출 */}
       <button
         type="button"
-        disabled={triggering}
-        onClick={onTriggerNow}
+        disabled={isBackfilling}
+        onClick={onAuditSongs}
+        title="수집된 음원들의 30초 오디오를 실시간 분석하여 BPM 및 조성을 정밀 재산출합니다"
         className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 rounded-xl text-xs font-bold text-white shadow transition shrink-0"
       >
-        <RefreshCw className={`w-3.5 h-3.5 ${triggering ? 'animate-spin' : ''}`} />
-        다음 밴드 즉시 수집
+        <RefreshCw className={`w-3.5 h-3.5 ${isBackfilling ? 'animate-spin' : ''}`} />
+        <span>{isBackfilling ? '수집음원 점검 중...' : '수집음원 점검'}</span>
       </button>
     </div>
   );
