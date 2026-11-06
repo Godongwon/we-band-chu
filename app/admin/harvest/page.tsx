@@ -140,6 +140,16 @@ export default function HarvestAdminPage() {
     return auditTargetArtists(artists, songs, aiAuditMap);
   }, [artists, songs, aiAuditMap]);
 
+  const availableGenres = useMemo(() => {
+    const map = new Map<string, number>();
+    songs.forEach((s) => {
+      if (selectedArtist !== 'ALL' && s.artist !== selectedArtist) return;
+      const g = s.genre?.trim() || '미분류';
+      map.set(g, (map.get(g) || 0) + 1);
+    });
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  }, [songs, selectedArtist]);
+
   useEffect(() => {
     const savedAuth = sessionStorage.getItem('admin_authenticated');
     if (savedAuth === 'true') {
@@ -1307,16 +1317,6 @@ export default function HarvestAdminPage() {
       />
     );
   }
-
-  const availableGenres = useMemo(() => {
-    const map = new Map<string, number>();
-    songs.forEach((s) => {
-      if (selectedArtist !== 'ALL' && s.artist !== selectedArtist) return;
-      const g = s.genre?.trim() || '미분류';
-      map.set(g, (map.get(g) || 0) + 1);
-    });
-    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
-  }, [songs, selectedArtist]);
 
   const filteredSongs = songs.filter((s) => {
     const matchesArtist = selectedArtist === 'ALL' || s.artist === selectedArtist;
