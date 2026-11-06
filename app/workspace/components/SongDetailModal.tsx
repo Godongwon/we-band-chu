@@ -36,16 +36,6 @@ export default function SongDetailModal({
   onReportSong,
   onAddToRepertoire,
 }: SongDetailModalProps) {
-  if (!selectedSong) return null;
-
-  const matchedRep = repertoire.find((r) => isSameSong(r, selectedSong));
-
-  const repStatusObj = matchedRep
-    ? REPERTOIRE_STATUS_OPTIONS.find(
-        (opt) => opt.value === (matchedRep.status || 'WISHLIST')
-      ) || REPERTOIRE_STATUS_OPTIONS[0]
-    : null;
-
   // 30초 음악 미리듣기 재생 상태
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
@@ -61,15 +51,23 @@ export default function SongDetailModal({
     };
   }, []);
 
-  // 곡이 변경되면 기존 오디오 정지 및 상태 리셋
+  // 곡이 변경되면 기존 오디오 정지
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
     }
-    setIsPlaying(false);
-    setIsLoadingAudio(false);
   }, [selectedSong?.id, selectedSong?.title]);
+
+  if (!selectedSong) return null;
+
+  const matchedRep = repertoire.find((r) => isSameSong(r, selectedSong));
+
+  const repStatusObj = matchedRep
+    ? REPERTOIRE_STATUS_OPTIONS.find(
+        (opt) => opt.value === (matchedRep.status || 'WISHLIST')
+      ) || REPERTOIRE_STATUS_OPTIONS[0]
+    : null;
 
   const handleClose = () => {
     if (audioRef.current) {
@@ -106,7 +104,6 @@ export default function SongDetailModal({
         const data = await res.json();
         if (res.ok && data.preview_url) {
           streamUrl = data.preview_url;
-          selectedSong.preview_url = streamUrl;
         } else {
           alert(`'${selectedSong.title}' 30초 미리듣기 음원을 찾지 못했습니다.`);
           setIsLoadingAudio(false);
@@ -140,7 +137,7 @@ export default function SongDetailModal({
       };
 
       await audio.play();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[음원 미리듣기 재생 오류]:', err);
       setIsPlaying(false);
       audioRef.current = null;
