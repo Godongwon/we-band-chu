@@ -19,11 +19,19 @@ async function runBackfillBatch() {
       success: true,
       updatedCount: 0,
       remainingCount: 0,
+      analyzedSongs: [],
       message: '분석 대기 중인 곡이 없습니다.',
     };
   }
 
   let updatedCount = 0;
+  const analyzedSongs: Array<{
+    id: string;
+    title: string;
+    artist: string;
+    bpm: number;
+    original_key: string;
+  }> = [];
 
   for (const song of targetSongs) {
     const previewUrl = (song as any).preview_url || (await fetchPreviewUrl(song.title, song.artist));
@@ -47,6 +55,13 @@ async function runBackfillBatch() {
 
     if (!updateErr) {
       updatedCount++;
+      analyzedSongs.push({
+        id: song.id,
+        title: song.title,
+        artist: song.artist,
+        bpm: detectedBpm,
+        original_key: detectedKey,
+      });
     }
   }
 
@@ -59,6 +74,7 @@ async function runBackfillBatch() {
     success: true,
     updatedCount,
     remainingCount: remainingCount || 0,
+    analyzedSongs,
   };
 }
 

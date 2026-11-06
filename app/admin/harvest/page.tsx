@@ -10,7 +10,7 @@ import {
 } from './types';
 import AdminAuthGate from './components/AdminAuthGate';
 import AdminActionToolbar from './components/AdminActionToolbar';
-import AdminStatsGrid from './components/AdminStatsGrid';
+import AdminStatsGrid, { AnalyzingSongInfo } from './components/AdminStatsGrid';
 import TargetArtistPanel from './components/TargetArtistPanel';
 import HarvestedSongPanel from './components/HarvestedSongPanel';
 import SuggestionsModal from './components/SuggestionsModal';
@@ -50,6 +50,7 @@ export default function HarvestAdminPage() {
   const [selectedArtist, setSelectedArtist] = useState<string>('ALL');
   const [searchSongQuery, setSearchSongQuery] = useState<string>('');
   const [isBackfilling, setIsBackfilling] = useState<boolean>(false);
+  const [currentAnalyzingSong, setCurrentAnalyzingSong] = useState<AnalyzingSongInfo | null>(null);
 
   const [selectedSongIds, setSelectedSongIds] = useState<Set<string>>(new Set());
 
@@ -128,12 +129,69 @@ export default function HarvestAdminPage() {
     }
   };
 
+  // songs 로드 시 아직 분석 곡 정보가 없으면 대기 중인 첫 곡 또는 최근 완료 곡으로 초기화
+  useEffect(() => {
+    if (songs.length === 0 || isBackfilling) return;
+    setCurrentAnalyzingSong((prev) => {
+      if (prev && prev.status === 'COMPLETED') return prev;
+      const nextPending = songs.find((s) => !s.bpm || !s.original_key);
+      if (nextPending) {
+        return {
+          title: nextPending.title,
+          artist: nextPending.artist,
+          bpm: nextPending.bpm,
+          original_key: nextPending.original_key,
+          status: 'PENDING',
+        };
+      }
+      const latestCompleted = songs.find((s) => s.bpm && s.original_key);
+      if (latestCompleted) {
+        return {
+          title: latestCompleted.title,
+          artist: latestCompleted.artist,
+          bpm: latestCompleted.bpm,
+          original_key: latestCompleted.original_key,
+          status: 'COMPLETED',
+        };
+      }
+      return null;
+    });
+  }, [songs, isBackfilling]);
+
   // 1분 주기 자동 오디오(BPM & Key) 실측 백필
   const runSilentBackfill = async () => {
+    const nextPending = songs.find((s) => !s.bpm || !s.original_key);
+    if (nextPending) {
+      setCurrentAnalyzingSong({
+        title: nextPending.title,
+        artist: nextPending.artist,
+        bpm: nextPending.bpm,
+        original_key: nextPending.original_key,
+        status: 'ANALYZING',
+      });
+    }
+    setIsBackfilling(true);
+
     try {
       const res = await fetch('/api/songs/backfill-audio', { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.success && data.updatedCount > 0) {
+        const list: any[] = data.analyzedSongs || [];
+        if (list.length > 0) {
+          for (let i = 0; i < list.length; i++) {
+            const item = list[i];
+            setCurrentAnalyzingSong({
+              title: item.title,
+              artist: item.artist,
+              bpm: item.bpm,
+              original_key: item.original_key,
+              status: i < list.length - 1 ? 'ANALYZING' : 'COMPLETED',
+            });
+            if (i < list.length - 1) {
+              await new Promise((r) => setTimeout(r, 250));
+            }
+          }
+        }
         setLastMessage(
           `[1분 주기 자동 실측] ${data.updatedCount}곡 BPM/Key 산출 완료 (남은 대상: ${data.remainingCount || 0}곡)`
         );
@@ -141,6 +199,8 @@ export default function HarvestAdminPage() {
       }
     } catch (e) {
       console.error('[자동 오디오 백필 오류]:', e);
+    } finally {
+      setIsBackfilling(false);
     }
   };
 
@@ -622,6 +682,16 @@ export default function HarvestAdminPage() {
   async function handleBackfillAudio() {
     if (!confirm('기존 곡들의 오디오(BPM & Key) 실측 백필을 진행하시겠습니까? (최대 10곡씩 순차 처리)'))
       return;
+    const nextPending = songs.find((s) => !s.bpm || !s.original_key);
+    if (nextPending) {
+      setCurrentAnalyzingSong({
+        title: nextPending.title,
+        artist: nextPending.artist,
+        bpm: nextPending.bpm,
+        original_key: nextPending.original_key,
+        status: 'ANALYZING',
+      });
+    }
     setIsBackfilling(true);
     setLastMessage('기존 수집곡 오디오 분석 백필 가동 중...');
 
@@ -630,6 +700,22 @@ export default function HarvestAdminPage() {
       const data = await res.json();
 
       if (res.ok && data.success) {
+        const list: any[] = data.analyzedSongs || [];
+        if (list.length > 0) {
+          for (let i = 0; i < list.length; i++) {
+            const item = list[i];
+            setCurrentAnalyzingSong({
+              title: item.title,
+              artist: item.artist,
+              bpm: item.bpm,
+              original_key: item.original_key,
+              status: i < list.length - 1 ? 'ANALYZING' : 'COMPLETED',
+            });
+            if (i < list.length - 1) {
+              await new Promise((r) => setTimeout(r, 250));
+            }
+          }
+        }
         setLastMessage(
           `${data.updatedCount || 0}곡 분석 갱신됨 (남은 대상: ${data.remainingCount || 0}곡)`
         );
@@ -709,6 +795,8 @@ export default function HarvestAdminPage() {
           countdown={countdown}
           refreshIntervalSeconds={REFRESH_INTERVAL_SECONDS}
           isAutoRefreshing={isAutoRefreshing}
+          isAnalyzingAudio={isBackfilling}
+          currentAnalyzingSong={currentAnalyzingSong}
           onManualRefreshNow={handleManualRefreshNow}
         />
 

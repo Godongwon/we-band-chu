@@ -1,14 +1,24 @@
 'use client';
 
 import React from 'react';
-import { Clock, RefreshCw, Timer } from 'lucide-react';
+import { Clock, RefreshCw, Timer, Sparkles } from 'lucide-react';
 import { HarvestStats } from '../types';
+
+export interface AnalyzingSongInfo {
+  title: string;
+  artist: string;
+  bpm?: number | null;
+  original_key?: string | null;
+  status?: 'ANALYZING' | 'COMPLETED' | 'PENDING';
+}
 
 interface AdminStatsGridProps {
   stats: HarvestStats;
   countdown: number;
   refreshIntervalSeconds: number;
   isAutoRefreshing: boolean;
+  isAnalyzingAudio?: boolean;
+  currentAnalyzingSong?: AnalyzingSongInfo | null;
   onManualRefreshNow: () => void;
 }
 
@@ -23,30 +33,108 @@ export default function AdminStatsGrid({
   countdown,
   refreshIntervalSeconds,
   isAutoRefreshing,
+  isAnalyzingAudio = false,
+  currentAnalyzingSong = null,
   onManualRefreshNow,
 }: AdminStatsGridProps) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-      <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
-        <span className="text-xs text-slate-400 block mb-1">총 수집 곡수</span>
-        <span className="text-2xl font-black text-slate-100">{stats.totalSongs}곡</span>
-      </div>
-
-      <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
-        <span className="text-xs text-slate-400 block mb-1">수집 대상 아티스트</span>
-        <span className="text-2xl font-black text-slate-100">
-          {stats.activeArtists}/{stats.totalArtists}팀
+      <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
+        <div>
+          <span className="text-xs text-slate-400 block mb-1">총 수집 곡수</span>
+          <span className="text-2xl font-black text-slate-100">{stats.totalSongs}곡</span>
+        </div>
+        <span className="text-[10px] text-slate-500 mt-2 block">
+          분석 완료: {stats.analyzedBpmCount}곡
         </span>
       </div>
 
-      <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
-        <span className="text-xs text-slate-400 block mb-1">BPM 실측 완료율</span>
-        <span className="text-2xl font-black text-emerald-400">{stats.bpmRate}%</span>
+      <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
+        <div>
+          <span className="text-xs text-slate-400 block mb-1">수집 대상 아티스트</span>
+          <span className="text-2xl font-black text-slate-100">
+            {stats.activeArtists}/{stats.totalArtists}팀
+          </span>
+        </div>
+        <span className="text-[10px] text-slate-500 mt-2 block">
+          2분 주기 자동 수집
+        </span>
       </div>
 
-      <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl">
-        <span className="text-xs text-slate-400 block mb-1">조성(Key) 산출 완료율</span>
-        <span className="text-2xl font-black text-purple-400">{stats.keyRate}%</span>
+      {/* BPM 실측 완료율 + 현재 분석 곡 표시 */}
+      <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-slate-400">BPM 실측 완료율</span>
+            {isAnalyzingAudio && (
+              <RefreshCw className="w-3 h-3 animate-spin text-emerald-400" />
+            )}
+          </div>
+          <span className="text-2xl font-black text-emerald-400">{stats.bpmRate}%</span>
+        </div>
+
+        <div className="mt-2.5 pt-2 border-t border-slate-800/80 text-[10px]">
+          {currentAnalyzingSong ? (
+            <div className="space-y-0.5">
+              <div className="flex items-center justify-between gap-1">
+                <span className={isAnalyzingAudio ? 'text-emerald-400 font-bold flex items-center gap-1' : 'text-slate-500'}>
+                  {isAnalyzingAudio ? '실측 중' : currentAnalyzingSong.status === 'COMPLETED' ? '최근 실측' : '분석 대기'}
+                </span>
+                {currentAnalyzingSong.bpm && (
+                  <span className="px-1.5 py-0.2 rounded bg-emerald-950/90 border border-emerald-800 text-emerald-300 font-bold">
+                    {currentAnalyzingSong.bpm} BPM
+                  </span>
+                )}
+              </div>
+              <span
+                className="text-slate-300 font-medium block truncate"
+                title={`${currentAnalyzingSong.artist} - ${currentAnalyzingSong.title}`}
+              >
+                {currentAnalyzingSong.artist} - {currentAnalyzingSong.title}
+              </span>
+            </div>
+          ) : (
+            <span className="text-slate-500 block truncate">전곡 BPM 실측 완료</span>
+          )}
+        </div>
+      </div>
+
+      {/* 조성(Key) 산출 완료율 + 현재 분석 곡 표시 */}
+      <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-slate-400">조성(Key) 산출 완료율</span>
+            {isAnalyzingAudio && (
+              <Sparkles className="w-3 h-3 animate-spin text-purple-400" />
+            )}
+          </div>
+          <span className="text-2xl font-black text-purple-400">{stats.keyRate}%</span>
+        </div>
+
+        <div className="mt-2.5 pt-2 border-t border-slate-800/80 text-[10px]">
+          {currentAnalyzingSong ? (
+            <div className="space-y-0.5">
+              <div className="flex items-center justify-between gap-1">
+                <span className={isAnalyzingAudio ? 'text-purple-400 font-bold flex items-center gap-1' : 'text-slate-500'}>
+                  {isAnalyzingAudio ? '산출 중' : currentAnalyzingSong.status === 'COMPLETED' ? '최근 산출' : '분석 대기'}
+                </span>
+                {currentAnalyzingSong.original_key && (
+                  <span className="px-1.5 py-0.2 rounded bg-purple-950/90 border border-purple-800 text-purple-300 font-bold">
+                    {currentAnalyzingSong.original_key} Key
+                  </span>
+                )}
+              </div>
+              <span
+                className="text-slate-300 font-medium block truncate"
+                title={`${currentAnalyzingSong.artist} - ${currentAnalyzingSong.title}`}
+              >
+                {currentAnalyzingSong.artist} - {currentAnalyzingSong.title}
+              </span>
+            </div>
+          ) : (
+            <span className="text-slate-500 block truncate">전곡 Key 산출 완료</span>
+          )}
+        </div>
       </div>
 
       <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl col-span-2 sm:col-span-1 flex flex-col justify-between relative overflow-hidden">
@@ -101,4 +189,3 @@ export default function AdminStatsGrid({
     </div>
   );
 }
-
