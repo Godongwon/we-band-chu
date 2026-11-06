@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Music2, Radio, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -28,32 +29,124 @@ export default function LoginPage() {
     }
   }, [router]);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg('');
 
-    if (!bandName.trim()) {
+    const cleanName = bandName.trim();
+    const cleanCode = accessCode.trim();
+
+    if (!cleanName) {
       setErrorMsg('밴드 이름을 입력해 주세요.');
       return;
     }
-    if (!accessCode.trim()) {
+    if (!cleanCode) {
       setErrorMsg('비밀번호(입장 코드)를 입력해 주세요.');
       return;
     }
 
-    // 밴드 프로필 구성 객체 생성
-    const bandData = {
-      name: bandName.trim(),
-      access_code: accessCode.trim(),
-      vocal_gender: vocalGender,
-      guitar_count: guitarCount,
-      has_keys: hasKeys,
-      logged_in_at: new Date().toISOString(),
-    };
+    try {
+      const { data: existingBand, error: fetchErr } = await supabase
+        .from('bands')
+        .select('*')
+        .eq('name', cleanName)
+        .maybeSingle();
 
-    // 로컬 스토리지에 세션 저장 후 워크스페이스로 이동
-    localStorage.setItem('current_band', JSON.stringify(bandData));
-    window.location.href = '/workspace';
+      if (!fetchErr && existingBand) {
+        if (!isNewBand && existingBand.access_code && existingBand.access_code !== cleanCode) {
+          setErrorMsg('입장 비밀번호가 일치하지 않습니다.');
+          return;
+        }
+
+        if (isNewBand) {
+          const { data: updatedBand } = await supabase
+            .from('bands')
+            .update({
+              access_code: cleanCode,
+              vocal_gender: vocalGender,
+              guitar_count: guitarCount,
+              has_keys: hasKeys,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existingBand.id)
+            .select()
+            .single();
+
+          const finalBand = updatedBand || existingBand;
+          localStorage.setItem(
+            'current_band',
+            JSON.stringify({
+              id: finalBand.id,
+              name: finalBand.name,
+              access_code: cleanCode,
+              vocal_gender: finalBand.vocal_gender || vocalGender,
+              guitar_count: finalBand.guitar_count ?? guitarCount,
+              has_keys: finalBand.has_keys ?? hasKeys,
+              logged_in_at: new Date().toISOString(),
+            })
+          );
+          window.location.href = '/workspace';
+          return;
+        }
+
+        // 기존 밴드 입장 시 DB에 저장된 밴드 구성을 그대로 불러옴
+        localStorage.setItem(
+          'current_band',
+          JSON.stringify({
+            id: existingBand.id,
+            name: existingBand.name,
+            access_code: existingBand.access_code || cleanCode,
+            vocal_gender: existingBand.vocal_gender || 'FEMALE',
+            guitar_count: existingBand.guitar_count ?? 1,
+            has_keys: existingBand.has_keys ?? true,
+            logged_in_at: new Date().toISOString(),
+          })
+        );
+        window.location.href = '/workspace';
+        return;
+      }
+
+      // DB에 등록되지 않은 밴드인 경우 신규 생성
+      const { data: createdBand } = await supabase
+        .from('bands')
+        .insert([
+          {
+            name: cleanName,
+            access_code: cleanCode,
+            vocal_gender: vocalGender,
+            guitar_count: guitarCount,
+            has_keys: hasKeys,
+            updated_at: new Date().toISOString(),
+          },
+        ])
+        .select()
+        .single();
+
+      const bandData = {
+        id: createdBand?.id,
+        name: cleanName,
+        access_code: cleanCode,
+        vocal_gender: createdBand?.vocal_gender || vocalGender,
+        guitar_count: createdBand?.guitar_count ?? guitarCount,
+        has_keys: createdBand?.has_keys ?? hasKeys,
+        logged_in_at: new Date().toISOString(),
+      };
+
+      localStorage.setItem('current_band', JSON.stringify(bandData));
+      window.location.href = '/workspace';
+    } catch (err) {
+      console.error('[로그인 처리 오류]:', err);
+      const bandData = {
+        name: cleanName,
+        access_code: cleanCode,
+        vocal_gender: vocalGender,
+        guitar_count: guitarCount,
+        has_keys: hasKeys,
+        logged_in_at: new Date().toISOString(),
+      };
+      localStorage.setItem('current_band', JSON.stringify(bandData));
+      window.location.href = '/workspace';
+    }
   }
 
   return (

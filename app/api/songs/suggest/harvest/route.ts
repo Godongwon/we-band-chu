@@ -2,37 +2,9 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { classifyArtistWithLLM } from '@/lib/artistClassifier';
+import { analyzePreviewAudio } from '@/lib/audioAnalyzer';
 
 export const maxDuration = 60;
-
-async function analyzeAudioBuffer(previewUrl: string): Promise<{ bpm: number | null; key: string | null }> {
-  try {
-    const audioRes = await fetch(previewUrl);
-    if (!audioRes.ok) return { bpm: null, key: null };
-    const arrayBuffer = await audioRes.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    let peakCount = 0;
-    const step = 200;
-    for (let i = 0; i < buffer.length - step; i += step) {
-      const val = Math.abs(buffer.readInt16LE(i));
-      if (val > 18000) peakCount++;
-    }
-
-    const durationSec = 30;
-    let rawBpm = Math.round((peakCount / durationSec) * 60 * 0.22);
-    while (rawBpm > 200) rawBpm = Math.round(rawBpm / 2);
-    while (rawBpm < 75 && rawBpm > 0) rawBpm = rawBpm * 2;
-    const bpm = rawBpm >= 75 && rawBpm <= 200 ? rawBpm : 120;
-
-    const COMMON_KEYS = ['C', 'G', 'D', 'A', 'E', 'F', 'Bb', 'Eb', 'Ab', 'Am', 'Em', 'Bm', 'F#m', 'C#m', 'Dm'];
-    const key = COMMON_KEYS[buffer.length % COMMON_KEYS.length];
-
-    return { bpm, key };
-  } catch (err) {
-    return { bpm: null, key: null };
-  }
-}
 
 export async function POST(req: Request) {
   try {
@@ -49,7 +21,7 @@ export async function POST(req: Request) {
       let analyzedKey: string | null = null;
 
       if (previewUrl) {
-        const analysis = await analyzeAudioBuffer(previewUrl);
+        const analysis = await analyzePreviewAudio(previewUrl, `${artist}-${title}`);
         analyzedBpm = analysis.bpm;
         analyzedKey = analysis.key;
       }

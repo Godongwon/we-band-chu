@@ -10,6 +10,7 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const limit = parseInt(searchParams.get('limit') || '2000', 10);
     const id = searchParams.get('id');
+    const q = searchParams.get('q')?.trim();
 
     if (id) {
       const { data, error } = await supabase
@@ -22,11 +23,19 @@ export async function GET(req: Request) {
       return NextResponse.json({ song: data });
     }
 
-    const { data: songs, error } = await supabase
+    let queryBuilder = supabase
       .from('songs')
-      .select('id, title, artist, genre, bpm, original_key, youtube_url, created_at')
-      .order('created_at', { ascending: false })
-      .limit(limit);
+      .select('id, title, artist, genre, bpm, original_key, vocal_gender, youtube_url, created_at')
+      .order('created_at', { ascending: false });
+
+    if (q) {
+      const safeQ = q.replace(/[,()]/g, ' ').trim();
+      if (safeQ) {
+        queryBuilder = queryBuilder.or(`title.ilike.%${safeQ}%,artist.ilike.%${safeQ}%`);
+      }
+    }
+
+    const { data: songs, error } = await queryBuilder.limit(limit);
 
     if (error) {
       console.error('[API /api/songs GET Error]:', error.message);
