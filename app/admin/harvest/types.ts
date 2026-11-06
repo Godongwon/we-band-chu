@@ -38,6 +38,7 @@ export interface SongItem {
   genre: string | null;
   bpm: number | null;
   original_key: string | null;
+  preview_url?: string | null;
   youtube_url: string | null;
   created_at: string;
 }

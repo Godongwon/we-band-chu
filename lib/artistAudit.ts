@@ -161,89 +161,94 @@ export function auditTargetArtists(
     const artistSongs = songsByArtist.get(normName) || [];
     const songCount = artistSongs.length;
 
-    // (A) 비밴드 아티스트 사전 검사
-    for (const rule of KNOWN_NON_BAND_ARTISTS) {
-      if (
-        rule.keywords.some(
-          (kw) => normName === kw || normAlias === kw || normName.includes(kw)
-        )
-      ) {
-        typesSet.add('NON_BAND');
-        reasons.push(rule.reason);
-        break;
+    // 수집 대기 중 상태(last_harvested_at이 없는 밴드)는 검사 필요 목록에서 제외
+    const isHarvestPending = !artist.last_harvested_at;
+
+    if (!isHarvestPending) {
+      // (A) 비밴드 아티스트 사전 검사
+      for (const rule of KNOWN_NON_BAND_ARTISTS) {
+        if (
+          rule.keywords.some(
+            (kw) => normName === kw || normAlias === kw || normName.includes(kw)
+          )
+        ) {
+          typesSet.add('NON_BAND');
+          reasons.push(rule.reason);
+          break;
+        }
       }
-    }
 
-    // (B) 수집된 곡의 장르 기반 비밴드 의심 검사
-    if (songCount > 0) {
-      const nonBandSongs = artistSongs.filter((s) => {
-        const g = (s.genre || '').toLowerCase();
-        return NON_BAND_SONG_GENRES.some((bad) => g.includes(bad));
-      });
-      if (nonBandSongs.length > 0 && nonBandSongs.length >= Math.ceil(songCount * 0.5)) {
-        typesSet.add('NON_BAND');
-        const sampleGenre = nonBandSongs[0].genre || '비밴드 장르';
-        reasons.push(
-          `수집곡 중 비밴드 장르(${sampleGenre}) 비중 높음 (${nonBandSongs.length}/${songCount}곡)`
-        );
+      // (B) 수집된 곡의 장르 기반 비밴드 의심 검사
+      if (songCount > 0) {
+        const nonBandSongs = artistSongs.filter((s) => {
+          const g = (s.genre || '').toLowerCase();
+          return NON_BAND_SONG_GENRES.some((bad) => g.includes(bad));
+        });
+        if (nonBandSongs.length > 0 && nonBandSongs.length >= Math.ceil(songCount * 0.5)) {
+          typesSet.add('NON_BAND');
+          const sampleGenre = nonBandSongs[0].genre || '비밴드 장르';
+          reasons.push(
+            `수집곡 중 비밴드 장르(${sampleGenre}) 비중 높음 (${nonBandSongs.length}/${songCount}곡)`
+          );
+        }
       }
-    }
 
-    // (C) 별칭(search_alias) 누락, 한글 포함, 또는 알려진 한/영 불일치 오매칭 검사
-    if (!artist.search_alias || !artist.search_alias.trim()) {
-      typesSet.add('ALIAS_ERROR');
-      reasons.push('영문 검색 별칭(search_alias)이 비어 있음');
-    } else if (/[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(artist.search_alias)) {
-      typesSet.add('ALIAS_ERROR');
-      reasons.push(`영문 별칭(${artist.search_alias})에 한글이 포함되어 있음`);
-    }
-
-    for (const mismatch of KNOWN_MISMATCHED_ALIASES) {
-      if (
-        normName === mismatch.nameNorm &&
-        (!mismatch.aliasNorm || normAlias === mismatch.aliasNorm)
-      ) {
+      // (C) 별칭(search_alias) 누락, 한글 포함, 또는 알려진 한/영 불일치 오매칭 검사
+      if (!artist.search_alias || !artist.search_alias.trim()) {
         typesSet.add('ALIAS_ERROR');
-        reasons.push(mismatch.reason);
+        reasons.push('영문 검색 별칭(search_alias)이 비어 있음');
+      } else if (/[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(artist.search_alias)) {
+        typesSet.add('ALIAS_ERROR');
+        reasons.push(`영문 별칭(${artist.search_alias})에 한글이 포함되어 있음`);
       }
-    }
 
-    // (D) 중복 등록 아티스트 검사
-    const sameAliasList = normAliasAscii ? aliasGroupMap.get(normAliasAscii) || [] : [];
-    const baseName = normalizeArtistSearch((artist.name || '').replace(/\s*\(.*?\)\s*/g, ''));
-    const sameBaseList = baseName ? baseNameGroupMap.get(baseName) || [] : [];
-
-    if (sameAliasList.length > 1) {
-      const others = sameAliasList
-        .filter((a) => a.id !== artist.id)
-        .map((a) => a.name)
-        .join(', ');
-      typesSet.add('DUPLICATE');
-      reasons.push(`동일 영문 별칭(${artist.search_alias}) 중복 등록: ${others}`);
-    } else if (sameBaseList.length > 1) {
-      const others = sameBaseList
-        .filter((a) => a.id !== artist.id)
-        .map((a) => a.name)
-        .join(', ');
-      typesSet.add('DUPLICATE');
-      reasons.push(`동일 밴드명 중복 등록: ${others}`);
-    }
-
-    // (E) 이미 수집 시도되었으나 수집된 곡이 0곡인 아티스트 검사
-    if ((artist.last_harvested_at || artist.priority === 3) && songCount === 0) {
-      typesSet.add('ZERO_SONGS');
-      reasons.push('수집 실행 이력이 있으나 현재 DB에 수집된 곡이 0곡임 (검색 별칭 또는 아티스트명 점검 필요)');
-    }
-
-    // (F) AI 정밀 검사 결과 병합
-    const aiResult = aiAuditMap[artist.id];
-    if (aiResult) {
-      for (const t of aiResult.types) {
-        typesSet.add(t);
+      for (const mismatch of KNOWN_MISMATCHED_ALIASES) {
+        if (
+          normName === mismatch.nameNorm &&
+          (!mismatch.aliasNorm || normAlias === mismatch.aliasNorm)
+        ) {
+          typesSet.add('ALIAS_ERROR');
+          reasons.push(mismatch.reason);
+        }
       }
-      for (const r of aiResult.reasons) {
-        if (!reasons.includes(r)) {
-          reasons.push(r);
+
+      // (D) 중복 등록 아티스트 검사
+      const sameAliasList = normAliasAscii ? aliasGroupMap.get(normAliasAscii) || [] : [];
+      const baseName = normalizeArtistSearch((artist.name || '').replace(/\s*\(.*?\)\s*/g, ''));
+      const sameBaseList = baseName ? baseNameGroupMap.get(baseName) || [] : [];
+
+      if (sameAliasList.length > 1) {
+        const others = sameAliasList
+          .filter((a) => a.id !== artist.id)
+          .map((a) => a.name)
+          .join(', ');
+        typesSet.add('DUPLICATE');
+        reasons.push(`동일 영문 별칭(${artist.search_alias}) 중복 등록: ${others}`);
+      } else if (sameBaseList.length > 1) {
+        const others = sameBaseList
+          .filter((a) => a.id !== artist.id)
+          .map((a) => a.name)
+          .join(', ');
+        typesSet.add('DUPLICATE');
+        reasons.push(`동일 밴드명 중복 등록: ${others}`);
+      }
+
+      // (E) 이미 수집 시도되었으나 수집된 곡이 0곡인 아티스트 검사
+      if (artist.last_harvested_at && songCount === 0) {
+        typesSet.add('ZERO_SONGS');
+        reasons.push('수집 실행 이력이 있으나 현재 DB에 수집된 곡이 0곡임 (검색 별칭 또는 아티스트명 점검 필요)');
+      }
+
+      // (F) AI 정밀 검사 결과 병합
+      const aiResult = aiAuditMap[artist.id];
+      if (aiResult) {
+        for (const t of aiResult.types) {
+          typesSet.add(t);
+        }
+        for (const r of aiResult.reasons) {
+          if (!reasons.includes(r)) {
+            reasons.push(r);
+          }
         }
       }
     }

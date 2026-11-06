@@ -35,7 +35,7 @@ export async function GET(req: Request) {
 
     let queryBuilder = supabase
       .from('songs')
-      .select('id, title, artist, genre, bpm, original_key, vocal_gender, youtube_url, created_at')
+      .select('id, title, artist, genre, bpm, original_key, vocal_gender, youtube_url, preview_url, created_at')
       .order('created_at', { ascending: false });
 
     if (!q) {
