@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { SongItem, BandProfile } from './types';
+import { SongItem, BandProfile, RepertoireStatus } from './types';
 import WorkspaceToolbar from './components/WorkspaceToolbar';
 import RepertoirePanel from './components/RepertoirePanel';
 import RecommendationPanel from './components/RecommendationPanel';
 import EditBandProfileModal from './components/EditBandProfileModal';
 import SuggestSongModal from './components/SuggestSongModal';
 import SongDetailModal from './components/SongDetailModal';
+import PracticeModal from '@/app/components/PracticeModal';
 
 export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
   const [bandProfile, setBandProfile] = useState<BandProfile>({
@@ -38,6 +39,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
   const [isSearching, setIsSearching] = useState<boolean>(false);
 
   const [selectedSong, setSelectedSong] = useState<SongItem | null>(null);
+  const [practiceModalSong, setPracticeModalSong] = useState<SongItem | null>(null);
 
   const [isSuggestOpen, setIsSuggestOpen] = useState<boolean>(false);
   const [suggestTitle, setSuggestTitle] = useState<string>('');
@@ -92,7 +94,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
 
           const { data: dbRep } = await supabase
             .from('band_repertoire')
-            .select('song_id, played_key, songs (*)')
+            .select('id, song_id, status, played_key, band_notes, songs (*)')
             .eq('band_id', dbBand.id)
             .order('created_at', { ascending: false });
 
@@ -101,6 +103,9 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
               .filter((r: any) => r.songs)
               .map((r: any) => ({
                 id: r.songs.id,
+                repertoire_id: r.id,
+                status: (r.status as RepertoireStatus) || 'WISHLIST',
+                band_notes: r.band_notes || '',
                 title: r.songs.title,
                 artist: r.songs.artist,
                 genre: r.songs.genre || 'Rock/Band',
@@ -113,7 +118,14 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
             const mergedMap = new Map<string, SongItem>();
             [...restoredRep, ...dbSongs].forEach((item) => {
               if (item && item.title) {
-                mergedMap.set(item.title.toLowerCase().trim(), item);
+                const key = item.title.toLowerCase().trim();
+                const prev = mergedMap.get(key);
+                mergedMap.set(key, {
+                  ...prev,
+                  ...item,
+                  status: item.status || prev?.status || 'WISHLIST',
+                  repertoire_id: item.repertoire_id || prev?.repertoire_id,
+                });
               }
             });
             const mergedList = Array.from(mergedMap.values());
@@ -324,7 +336,11 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
       alert('이미 레퍼토리에 담긴 곡입니다.');
       return;
     }
-    const nextRep = [...repertoire, song];
+    const newItem: SongItem = {
+      ...song,
+      status: song.status || 'WISHLIST',
+    };
+    const nextRep = [...repertoire, newItem];
     setRepertoire(nextRep);
     localStorage.setItem(`repertoire_${bandProfile.name}`, JSON.stringify(nextRep));
 
@@ -348,18 +364,99 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
           .maybeSingle();
 
         if (!existingRep) {
-          await supabase.from('band_repertoire').insert({
-            band_id: targetBandId,
-            song_id: song.id,
-            status: 'WISHLIST',
-            played_key: song.recommended_key || song.original_key || 'C',
-            band_notes: '워크스페이스 레퍼토리 추가',
-            votes_count: 1,
-          });
+          const { data: insertedRep } = await supabase
+            .from('band_repertoire')
+            .insert({
+              band_id: targetBandId,
+              song_id: song.id,
+              status: 'WISHLIST',
+              played_key: song.recommended_key || song.original_key || 'C',
+              band_notes: '워크스페이스 레퍼토리 추가',
+              votes_count: 1,
+            })
+            .select('id')
+            .single();
+
+          if (insertedRep?.id) {
+            setRepertoire((prev) => {
+              const updated = prev.map((r) =>
+                r.title === song.title ? { ...r, repertoire_id: insertedRep.id } : r
+              );
+              localStorage.setItem(`repertoire_${bandProfile.name}`, JSON.stringify(updated));
+              return updated;
+            });
+          }
         }
       }
     } catch (err) {
       console.error('[레퍼토리 DB 저장 오류]:', err);
+    }
+  }
+
+  async function handleRepertoireStatusChange(song: SongItem, newStatus: RepertoireStatus) {
+    const oldStatus = song.status || 'WISHLIST';
+    if (oldStatus === newStatus) return;
+
+    // 후보(WISHLIST) → 연습중(PRACTICING) 또는 합주중(ENSEMBLE) 변경 시 자동으로 파트별 합주팩 실행
+    if (oldStatus === 'WISHLIST' && (newStatus === 'PRACTICING' || newStatus === 'ENSEMBLE')) {
+      setPracticeModalSong(song);
+    }
+
+    const nextRep = repertoire.map((r) =>
+      r.title === song.title ? { ...r, status: newStatus } : r
+    );
+    setRepertoire(nextRep);
+    localStorage.setItem(`repertoire_${bandProfile.name}`, JSON.stringify(nextRep));
+
+    try {
+      if (song.repertoire_id) {
+        await supabase
+          .from('band_repertoire')
+          .update({
+            status: newStatus,
+            completed_at:
+              newStatus === 'COMPLETED' || newStatus === 'PERFORMED' || newStatus === 'VIDEO_COMPLETED'
+                ? new Date().toISOString()
+                : null,
+          })
+          .eq('id', song.repertoire_id);
+      } else if (bandProfile.id && song.id) {
+        await supabase
+          .from('band_repertoire')
+          .update({
+            status: newStatus,
+            completed_at:
+              newStatus === 'COMPLETED' || newStatus === 'PERFORMED' || newStatus === 'VIDEO_COMPLETED'
+                ? new Date().toISOString()
+                : null,
+          })
+          .eq('band_id', bandProfile.id)
+          .eq('song_id', song.id);
+      }
+    } catch (err) {
+      console.error('[레퍼토리 상태 변경 DB 저장 오류]:', err);
+    }
+  }
+
+  async function handleRemoveFromRepertoire(song: SongItem) {
+    if (!confirm(`'${song.title}' 곡을 우리 밴드 레퍼토리에서 제거하시겠습니까?`)) return;
+
+    const nextRep = repertoire.filter((r) => r.title !== song.title);
+    setRepertoire(nextRep);
+    localStorage.setItem(`repertoire_${bandProfile.name}`, JSON.stringify(nextRep));
+
+    try {
+      if (song.repertoire_id) {
+        await supabase.from('band_repertoire').delete().eq('id', song.repertoire_id);
+      } else if (bandProfile.id && song.id) {
+        await supabase
+          .from('band_repertoire')
+          .delete()
+          .eq('band_id', bandProfile.id)
+          .eq('song_id', song.id);
+      }
+    } catch (err) {
+      console.error('[레퍼토리 삭제 오류]:', err);
     }
   }
 
@@ -431,7 +528,13 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start pt-1">
-          <RepertoirePanel repertoire={repertoire} onSelectSong={setSelectedSong} />
+          <RepertoirePanel
+            repertoire={repertoire}
+            onSelectSong={setSelectedSong}
+            onStatusChange={handleRepertoireStatusChange}
+            onOpenPracticePack={(song) => setPracticeModalSong(song)}
+            onRemoveFromRepertoire={handleRemoveFromRepertoire}
+          />
 
           <RecommendationPanel
             isSearchActive={false}
@@ -483,6 +586,12 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
         onClose={() => setSelectedSong(null)}
         onReportSong={handleReportSong}
         onAddToRepertoire={handleAddToRepertoire}
+      />
+
+      <PracticeModal
+        song={practiceModalSong}
+        currentBand={bandProfile}
+        onClose={() => setPracticeModalSong(null)}
       />
     </main>
   );

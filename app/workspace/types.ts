@@ -1,6 +1,17 @@
 // app/workspace/types.ts
+export type RepertoireStatus =
+  | 'WISHLIST'
+  | 'PRACTICING'
+  | 'ENSEMBLE'
+  | 'COMPLETED'
+  | 'PERFORMED'
+  | 'VIDEO_COMPLETED';
+
 export interface SongItem {
   id?: string;
+  repertoire_id?: string;
+  status?: RepertoireStatus;
+  band_notes?: string;
   title: string;
   artist: string;
   genre: string;
@@ -21,4 +32,3 @@ export interface BandProfile {
   guitar_count: number;
   has_keys: boolean;
 }
-
