@@ -20,6 +20,7 @@ interface AdminStatsGridProps {
   isAnalyzingAudio?: boolean;
   currentAnalyzingSong?: AnalyzingSongInfo | null;
   onManualRefreshNow: () => void;
+  onOpenDiscoverArtists?: () => void;
 }
 
 function formatCountdown(seconds: number) {
@@ -36,6 +37,7 @@ export default function AdminStatsGrid({
   isAnalyzingAudio = false,
   currentAnalyzingSong = null,
   onManualRefreshNow,
+  onOpenDiscoverArtists,
 }: AdminStatsGridProps) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
@@ -56,9 +58,20 @@ export default function AdminStatsGrid({
             {stats.activeArtists}/{stats.totalArtists}팀
           </span>
         </div>
-        <span className="text-[10px] text-slate-500 mt-2 block">
-          2분 주기 자동 수집
-        </span>
+        <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-1">
+          <span className="text-[10px] text-slate-500 truncate">2분 주기 자동 수집</span>
+          {onOpenDiscoverArtists && (
+            <button
+              type="button"
+              onClick={onOpenDiscoverArtists}
+              title="현재 등록된 밴드 외에 새로운 밴드를 LLM으로 찾아 추가"
+              className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 hover:text-white text-[10px] font-bold transition shadow-sm shrink-0"
+            >
+              <Sparkles className="w-3 h-3 text-indigo-400" />
+              <span>다른 밴드 찾기</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* BPM 실측 완료율 + 현재 분석 곡 표시 */}

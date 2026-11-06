@@ -19,7 +19,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const { name, priority = 1 } = await req.json();
+    const { name, priority = 1, search_alias, vocal_gender } = await req.json();
 
     if (!name || !name.trim()) {
       return NextResponse.json({ success: false, message: '밴드 이름이 필요합니다.' }, { status: 400 });
@@ -27,8 +27,11 @@ export async function POST(req: Request) {
 
     const trimmedName = name.trim();
 
-    // 💡 LLM을 통해 search_alias 및 vocal_gender 자동 분석
-    const classified = await classifyArtistWithLLM(trimmedName);
+    // 전달된 search_alias / vocal_gender가 있으면 즉시 사용하고, 없으면 LLM으로 자동 분석
+    const classified =
+      search_alias && vocal_gender
+        ? { search_alias: String(search_alias).trim(), vocal_gender }
+        : await classifyArtistWithLLM(trimmedName);
 
     const { data, error } = await supabase
       .from('target_artists')

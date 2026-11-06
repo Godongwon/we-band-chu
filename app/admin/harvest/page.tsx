@@ -18,6 +18,7 @@ import SuggestionsModal from './components/SuggestionsModal';
 import ReportsModal from './components/ReportsModal';
 import AddArtistModal from './components/AddArtistModal';
 import ArtistDetailModal from './components/ArtistDetailModal';
+import DiscoverArtistsModal from './components/DiscoverArtistsModal';
 
 const REFRESH_INTERVAL_SECONDS = 120; // 2분 주기 갱신 및 자동 수집
 const BACKFILL_INTERVAL_SECONDS = 60; // 1분 주기 BPM/Key 오디오 실측
@@ -62,6 +63,7 @@ export default function HarvestAdminPage() {
   const [selectedSongIds, setSelectedSongIds] = useState<Set<string>>(new Set());
 
   const [isAddArtistOpen, setIsAddArtistOpen] = useState<boolean>(false);
+  const [isDiscoverOpen, setIsDiscoverOpen] = useState<boolean>(false);
   const [newArtistName, setNewArtistName] = useState<string>('');
   const [newArtistPriority, setNewArtistPriority] = useState<number>(1);
   const [addingArtist, setAddingArtist] = useState<boolean>(false);
@@ -1007,6 +1009,7 @@ export default function HarvestAdminPage() {
           isAnalyzingAudio={isBackfilling}
           currentAnalyzingSong={currentAnalyzingSong}
           onManualRefreshNow={handleManualRefreshNow}
+          onOpenDiscoverArtists={() => setIsDiscoverOpen(true)}
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
@@ -1087,6 +1090,16 @@ export default function HarvestAdminPage() {
         onUpdateArtistInfo={handleUpdateArtistInfo}
         onDeleteArtist={handleDeleteArtist}
         onFilterByArtist={(artistName) => setSelectedArtist(artistName)}
+      />
+
+      <DiscoverArtistsModal
+        isOpen={isDiscoverOpen}
+        existingArtistsCount={artists.length}
+        onClose={() => setIsDiscoverOpen(false)}
+        onArtistAdded={(msg) => {
+          setLastMessage(msg);
+          fetchArtists();
+        }}
       />
     </main>
   );
