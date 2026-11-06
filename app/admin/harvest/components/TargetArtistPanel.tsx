@@ -330,116 +330,121 @@ export default function TargetArtistPanel({
           </div>
 
           {/* 검사 필요 항목 & 우선순위 필터 탭 */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <button
-              type="button"
-              onClick={() => onChangeArtistFilterMode('ALL')}
-              className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition ${
-                artistFilterMode === 'ALL'
-                  ? 'bg-indigo-600 text-white border-indigo-500'
-                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
-              }`}
-            >
-              전체 ({artists.length})
-            </button>
+          <div className="flex flex-col gap-1.5">
+            {/* 1행: 전체 + 검사 필요 상태 필터 칩 */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => onChangeArtistFilterMode('ALL')}
+                className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition ${
+                  artistFilterMode === 'ALL'
+                    ? 'bg-indigo-600 text-white border-indigo-500'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                }`}
+              >
+                전체 ({artists.length})
+              </button>
 
-            <button
-              type="button"
-              onClick={() => onChangeArtistFilterMode('NEEDS_REVIEW')}
-              className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition flex items-center gap-1 ${
-                artistFilterMode === 'NEEDS_REVIEW'
-                  ? 'bg-amber-500 text-slate-950 border-amber-400'
-                  : 'bg-amber-950/60 text-amber-300 border-amber-800/70 hover:bg-amber-900/70'
-              }`}
-            >
-              <span>🚨 검사 필요 전체 ({counts.needsReview})</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => onChangeArtistFilterMode('NEEDS_REVIEW')}
+                className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition flex items-center gap-1 ${
+                  artistFilterMode === 'NEEDS_REVIEW'
+                    ? 'bg-amber-500 text-slate-950 border-amber-400'
+                    : 'bg-amber-950/60 text-amber-300 border-amber-800/70 hover:bg-amber-900/70'
+                }`}
+              >
+                <span>🚨 검사 필요 전체 ({counts.needsReview})</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => onChangeArtistFilterMode('NON_BAND')}
-              className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition ${
-                artistFilterMode === 'NON_BAND'
-                  ? 'bg-rose-600 text-white border-rose-500'
-                  : 'bg-rose-950/50 text-rose-300 border-rose-800/70 hover:bg-rose-900/60'
-              }`}
-            >
-              🎤 비밴드 의심 ({counts.nonBand})
-            </button>
+              <button
+                type="button"
+                onClick={() => onChangeArtistFilterMode('NON_BAND')}
+                className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition ${
+                  artistFilterMode === 'NON_BAND'
+                    ? 'bg-rose-600 text-white border-rose-500'
+                    : 'bg-rose-950/50 text-rose-300 border-rose-800/70 hover:bg-rose-900/60'
+                }`}
+              >
+                🎤 비밴드 의심 ({counts.nonBand})
+              </button>
 
-            <button
-              type="button"
-              onClick={() => onChangeArtistFilterMode('ALIAS_ERROR')}
-              className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition ${
-                artistFilterMode === 'ALIAS_ERROR'
-                  ? 'bg-orange-500 text-slate-950 border-orange-400'
-                  : 'bg-orange-950/50 text-orange-300 border-orange-800/70 hover:bg-orange-900/60'
-              }`}
-            >
-              🔤 이름/별칭 오류 ({counts.aliasError})
-            </button>
+              <button
+                type="button"
+                onClick={() => onChangeArtistFilterMode('ALIAS_ERROR')}
+                className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition ${
+                  artistFilterMode === 'ALIAS_ERROR'
+                    ? 'bg-orange-500 text-slate-950 border-orange-400'
+                    : 'bg-orange-950/50 text-orange-300 border-orange-800/70 hover:bg-orange-900/60'
+                }`}
+              >
+                🔤 이름/별칭 오류 ({counts.aliasError})
+              </button>
 
-            <button
-              type="button"
-              onClick={() => onChangeArtistFilterMode('DUPLICATE')}
-              className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition ${
-                artistFilterMode === 'DUPLICATE'
-                  ? 'bg-purple-600 text-white border-purple-500'
-                  : 'bg-purple-950/50 text-purple-300 border-purple-800/70 hover:bg-purple-900/60'
-              }`}
-            >
-              👯 중복 등록 ({counts.duplicate})
-            </button>
+              <button
+                type="button"
+                onClick={() => onChangeArtistFilterMode('DUPLICATE')}
+                className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition ${
+                  artistFilterMode === 'DUPLICATE'
+                    ? 'bg-purple-600 text-white border-purple-500'
+                    : 'bg-purple-950/50 text-purple-300 border-purple-800/70 hover:bg-purple-900/60'
+                }`}
+              >
+                👯 중복 등록 ({counts.duplicate})
+              </button>
 
-            <button
-              type="button"
-              onClick={() => onChangeArtistFilterMode('ZERO_SONGS')}
-              className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition ${
-                artistFilterMode === 'ZERO_SONGS'
-                  ? 'bg-cyan-600 text-white border-cyan-500'
-                  : 'bg-cyan-950/50 text-cyan-300 border-cyan-800/70 hover:bg-cyan-900/60'
-              }`}
-            >
-              📭 수집 후 0곡 ({counts.zeroSongs})
-            </button>
+              <button
+                type="button"
+                onClick={() => onChangeArtistFilterMode('ZERO_SONGS')}
+                className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition ${
+                  artistFilterMode === 'ZERO_SONGS'
+                    ? 'bg-cyan-600 text-white border-cyan-500'
+                    : 'bg-cyan-950/50 text-cyan-300 border-cyan-800/70 hover:bg-cyan-900/60'
+                }`}
+              >
+                📭 수집 후 0곡 ({counts.zeroSongs})
+              </button>
+            </div>
 
-            <span className="text-slate-700 px-0.5">|</span>
+            {/* 2행: 수집 우선순위 필터 칩 (1순위 / 2순위 / 3순위가 줄바꿈 없이 나란히 정렬) */}
+            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+              <span className="text-[11px] font-semibold text-slate-500 mr-1">우선순위:</span>
+              <button
+                type="button"
+                onClick={() => onChangeArtistFilterMode('PRIORITY_1')}
+                className={`text-[11px] px-2.5 py-1 rounded-lg border font-semibold transition ${
+                  artistFilterMode === 'PRIORITY_1'
+                    ? 'bg-indigo-600 text-white border-indigo-500'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                }`}
+              >
+                1순위 ({counts.p1})
+              </button>
 
-            <button
-              type="button"
-              onClick={() => onChangeArtistFilterMode('PRIORITY_1')}
-              className={`text-[11px] px-2.5 py-1 rounded-lg border font-semibold transition ${
-                artistFilterMode === 'PRIORITY_1'
-                  ? 'bg-indigo-600 text-white border-indigo-500'
-                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
-              }`}
-            >
-              1순위 ({counts.p1})
-            </button>
+              <button
+                type="button"
+                onClick={() => onChangeArtistFilterMode('PRIORITY_2')}
+                className={`text-[11px] px-2.5 py-1 rounded-lg border font-semibold transition ${
+                  artistFilterMode === 'PRIORITY_2'
+                    ? 'bg-slate-900 text-slate-200 border-slate-700'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                }`}
+              >
+                2순위 ({counts.p2})
+              </button>
 
-            <button
-              type="button"
-              onClick={() => onChangeArtistFilterMode('PRIORITY_2')}
-              className={`text-[11px] px-2.5 py-1 rounded-lg border font-semibold transition ${
-                artistFilterMode === 'PRIORITY_2'
-                  ? 'bg-indigo-600 text-white border-indigo-500'
-                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
-              }`}
-            >
-              2순위 ({counts.p2})
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onChangeArtistFilterMode('PRIORITY_3')}
-              className={`text-[11px] px-2.5 py-1 rounded-lg border font-semibold transition ${
-                artistFilterMode === 'PRIORITY_3'
-                  ? 'bg-emerald-600 text-white border-emerald-500'
-                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
-              }`}
-            >
-              3순위 ({counts.p3})
-            </button>
+              <button
+                type="button"
+                onClick={() => onChangeArtistFilterMode('PRIORITY_3')}
+                className={`text-[11px] px-2.5 py-1 rounded-lg border font-semibold transition ${
+                  artistFilterMode === 'PRIORITY_3'
+                    ? 'bg-emerald-600 text-white border-emerald-500'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                }`}
+              >
+                3순위 ({counts.p3})
+              </button>
+            </div>
           </div>
 
           {/* 아티스트 리스트 */}
