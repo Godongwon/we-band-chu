@@ -262,19 +262,16 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
         const res = await fetch(`/api/songs?q=${encodeURIComponent(trimmed)}&limit=200`);
         const data = await res.json();
         if (res.ok && data.songs) {
-          const q = trimmed.toLowerCase();
-          const matched = data.songs
-            .filter((s: any) => s.title?.toLowerCase().includes(q) || s.artist?.toLowerCase().includes(q))
-            .map((s: any) => ({
-              id: s.id,
-              title: s.title,
-              artist: s.artist,
-              genre: s.genre || 'Rock/Band',
-              bpm: s.bpm || 120,
-              original_key: s.original_key || '원키 유지',
-              recommended_key: s.original_key || '원키 유지',
-              youtube_url: s.youtube_url,
-            }));
+          const matched = data.songs.map((s: any) => ({
+            id: s.id,
+            title: s.title,
+            artist: s.artist,
+            genre: s.genre || 'Rock/Band',
+            bpm: s.bpm || 120,
+            original_key: s.original_key || '원키 유지',
+            recommended_key: s.original_key || '원키 유지',
+            youtube_url: s.youtube_url,
+          }));
           setSearchResults(matched);
         }
       } catch (err) {

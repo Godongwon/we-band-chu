@@ -33,11 +33,50 @@ export interface BandProfile {
   has_keys: boolean;
 }
 
+export function normalizeSearchText(text?: string | null): string {
+  return (text || '').toLowerCase().replace(/\s+/g, '');
+}
+
+export function matchesSongSearch(
+  song: { title?: string | null; artist?: string | null },
+  rawQuery: string
+): boolean {
+  const normQ = normalizeSearchText(rawQuery);
+  if (!normQ) return false;
+
+  const normTitle = normalizeSearchText(song.title);
+  const normArtist = normalizeSearchText(song.artist);
+  const combined1 = `${normTitle}${normArtist}`;
+  const combined2 = `${normArtist}${normTitle}`;
+
+  if (
+    normTitle.includes(normQ) ||
+    normArtist.includes(normQ) ||
+    combined1.includes(normQ) ||
+    combined2.includes(normQ)
+  ) {
+    return true;
+  }
+
+  const tokens = rawQuery
+    .toLowerCase()
+    .trim()
+    .split(/\s+/)
+    .map((t) => t.replace(/\s+/g, ''))
+    .filter(Boolean);
+
+  if (tokens.length > 1) {
+    return tokens.every((tk) => normTitle.includes(tk) || normArtist.includes(tk));
+  }
+
+  return false;
+}
+
 export function getSongCompositeKey(
   song?: { title?: string; artist?: string } | null
 ): string {
-  const t = (song?.title || '').toLowerCase().trim();
-  const a = (song?.artist || '').toLowerCase().trim();
+  const t = normalizeSearchText(song?.title);
+  const a = normalizeSearchText(song?.artist);
   return `${t}:::${a}`;
 }
 
