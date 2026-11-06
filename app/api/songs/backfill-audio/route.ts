@@ -5,7 +5,7 @@ import { fetchPreviewUrl, analyzePreviewAudio } from '@/lib/audioAnalyzer';
 
 export const maxDuration = 60;
 
-async function runBackfillBatch(isForceAll = false) {
+async function runBackfillBatch(isForceAll = false, offset = 0, batchSize = 10) {
   let query = supabase
     .from('songs')
     .select('id, title, artist, bpm, original_key, preview_url');
@@ -16,7 +16,7 @@ async function runBackfillBatch(isForceAll = false) {
 
   const { data: targetSongs, error: fetchErr } = await query
     .order('created_at', { ascending: false })
-    .limit(10);
+    .range(offset, offset + batchSize - 1);
 
   if (fetchErr) throw fetchErr;
 
@@ -25,8 +25,9 @@ async function runBackfillBatch(isForceAll = false) {
       success: true,
       updatedCount: 0,
       remainingCount: 0,
+      hasMore: false,
       analyzedSongs: [],
-      message: '분석 대기 중인 곡이 없습니다.',
+      message: '분석 대상 곡이 없습니다.',
     };
   }
 
@@ -71,15 +72,22 @@ async function runBackfillBatch(isForceAll = false) {
     }
   }
 
-  const { count: remainingCount } = await supabase
+  const { count: totalSongsCount } = await supabase
     .from('songs')
-    .select('*', { count: 'exact', head: true })
-    .or('bpm.is.null,original_key.is.null');
+    .select('*', { count: 'exact', head: true });
+
+  const nextOffset = offset + targetSongs.length;
+  const hasMore = isForceAll
+    ? nextOffset < (totalSongsCount || 0)
+    : targetSongs.length === batchSize;
 
   return {
     success: true,
     updatedCount,
-    remainingCount: remainingCount || 0,
+    offset,
+    nextOffset,
+    totalSongsCount: totalSongsCount || 0,
+    hasMore,
     analyzedSongs,
   };
 }
@@ -88,7 +96,9 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const isForceAll = searchParams.get('force') === 'true';
-    const result = await runBackfillBatch(isForceAll);
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0', 10));
+    const batchSize = Math.max(1, Math.min(20, parseInt(searchParams.get('batchSize') || '10', 10)));
+    const result = await runBackfillBatch(isForceAll, offset, batchSize);
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('[백필 API GET 에러]:', error.message);
@@ -102,10 +112,14 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     let isForceAll = false;
+    let offset = 0;
+    let batchSize = 10;
     let songIds: string[] | null = null;
     try {
       const body = await req.json();
       if (body?.force !== undefined) isForceAll = Boolean(body.force);
+      if (body?.offset !== undefined) offset = Math.max(0, Number(body.offset));
+      if (body?.batchSize !== undefined) batchSize = Math.max(1, Math.min(20, Number(body.batchSize)));
       if (Array.isArray(body?.songIds)) songIds = body.songIds;
     } catch {
       // Body 없는 경우 기본값
@@ -161,7 +175,7 @@ export async function POST(req: Request) {
       });
     }
 
-    const result = await runBackfillBatch(isForceAll);
+    const result = await runBackfillBatch(isForceAll, offset, batchSize);
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('[백필 API POST 에러]:', error.message);

@@ -1217,36 +1217,41 @@ export default function HarvestAdminPage() {
   async function handleAuditSongs() {
     if (
       !confirm(
-        '모든 수집 음원의 30초 오디오 스트림을 재분석하여 BPM 및 조성을 재산출하시겠습니까?\n\n(BPM 및 조성이 이미 산출된 곡도 최신 알고리즘으로 10곡씩 순차 점검 및 갱신합니다)'
+        `현재 수집된 모든 음원(${songs.length}곡)의 30초 오디오 스트림을 순차적으로 점검하여 BPM 및 조성을 처음부터 끝까지 정밀 재산출하시겠습니까?\n\n(Vercel 서버 타임아웃 방지를 위해 10곡씩 연속 배치 처리되며, 실시간으로 화면에 갱신됩니다)`
       )
     ) {
       return;
     }
 
-    const nextPending = songs[0];
-    if (nextPending) {
-      setCurrentAnalyzingSong({
-        title: nextPending.title,
-        artist: nextPending.artist,
-        bpm: nextPending.bpm,
-        original_key: nextPending.original_key,
-        status: 'ANALYZING',
-      });
-    }
     setIsBackfilling(true);
-    setLastMessage('수집음원 정밀 점검 및 BPM/조성 재산출 가동 중...');
+    let offset = 0;
+    let totalUpdated = 0;
+    let totalSongsCount = songs.length;
+
+    setLastMessage(`[수집음원 점검 시작] 전체 ${totalSongsCount}곡의 BPM/조성 재산출 진행 중... (0/${totalSongsCount})`);
 
     try {
-      const res = await fetch('/api/songs/backfill-audio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ force: true }),
-        cache: 'no-store',
-      });
-      const data = await res.json();
+      while (true) {
+        const res = await fetch('/api/songs/backfill-audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ force: true, offset, batchSize: 10 }),
+          cache: 'no-store',
+        });
 
-      if (res.ok && data.success) {
+        const data = await res.json();
+
+        if (!res.ok || !data?.success) {
+          setLastMessage(`점검 중단: ${data?.error || data?.message || `HTTP ${res.status}`}`);
+          break;
+        }
+
         const list: any[] = data.analyzedSongs || [];
+        totalUpdated += Number(data.updatedCount || 0);
+        if (data.totalSongsCount) {
+          totalSongsCount = Number(data.totalSongsCount);
+        }
+
         if (list.length > 0) {
           for (let i = 0; i < list.length; i++) {
             const item = list[i];
@@ -1264,17 +1269,25 @@ export default function HarvestAdminPage() {
                   : s
               )
             );
-            if (i < list.length - 1) {
-              await new Promise((r) => setTimeout(r, 200));
-            }
           }
         }
+
+        const nextOffset = Number(data.nextOffset || 0);
         setLastMessage(
-          `[수집음원 점검 완료] ${data.updatedCount || 0}곡의 BPM 및 조성이 성공적으로 재산출되었습니다.`
+          `[수집음원 전체 점검 중] (${Math.min(nextOffset, totalSongsCount)}/${totalSongsCount}곡 완료, ${totalUpdated}곡 갱신)...`
         );
-        await fetchSongs(true);
-      } else {
-        setLastMessage(`점검 실패: ${data.error || data.message || `HTTP ${res.status}`}`);
+
+        if (data.hasMore && nextOffset > offset) {
+          offset = nextOffset;
+          // UI 렌더링 및 부하 방지용 미세 딜레이
+          await new Promise((r) => setTimeout(r, 200));
+        } else {
+          setLastMessage(
+            `[수집음원 전체 점검 완료] 총 ${totalUpdated}곡의 BPM 및 조성이 성공적으로 정밀 재산출되었습니다!`
+          );
+          await fetchSongs(true);
+          break;
+        }
       }
     } catch (err: any) {
       setLastMessage(`점검 오류: ${err.message}`);
