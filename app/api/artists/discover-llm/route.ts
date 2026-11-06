@@ -175,6 +175,8 @@ function normalizeKey(str: string): string {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
+    const action = String(body.action || 'DISCOVER').trim().toUpperCase();
+    const autoAddCount = Math.max(1, Math.min(5, Number(body.count) || 2));
     const category = String(body.category || '전체 추천').trim();
     const customPrompt = String(body.customPrompt || '').trim();
 
@@ -216,6 +218,9 @@ export async function POST(req: Request) {
       }
       return filtered;
     };
+
+    let discoveredList: DiscoveredArtistCandidate[] = [];
+    let usedModel = 'curated-fallback';
 
     if (process.env.GEMINI_API_KEY) {
       const prompt = `당신은 대한민국 및 글로벌 밴드 합주곡 추천 서비스 '우밴추(We.Band.Chu)'의 수석 음악 큐레이터입니다.
@@ -263,11 +268,9 @@ ${customPrompt ? `추가 검색 요청사항: "${customPrompt}"` : ''}
 
           const validList = filterNewCandidates(rawList);
           if (validList.length > 0) {
-            return NextResponse.json({
-              success: true,
-              model: modelName,
-              candidates: validList,
-            });
+            discoveredList = validList;
+            usedModel = modelName;
+            break;
           }
         } catch (err: any) {
           console.warn(`[LLM 밴드 탐색 모델(${modelName}) 재시도]:`, err?.status || err?.message);
@@ -275,20 +278,61 @@ ${customPrompt ? `추가 검색 요청사항: "${customPrompt}"` : ''}
       }
     }
 
-    // Fallback: 큐레이션 풀에서 현재 DB에 없는 밴드들을 조건에 맞춰 반환
-    let fallbackPool = filterNewCandidates(CURATED_BAND_POOL);
-    if (category.includes('여성')) {
-      fallbackPool = fallbackPool.filter((b) => b.vocal_gender === 'FEMALE');
-    } else if (category.includes('남성')) {
-      fallbackPool = fallbackPool.filter((b) => b.vocal_gender === 'MALE');
-    } else if (category.includes('J-Rock') || category.includes('일본')) {
-      fallbackPool = fallbackPool.filter((b) => b.genre.includes('J-'));
+    if (discoveredList.length === 0) {
+      let fallbackPool = filterNewCandidates(CURATED_BAND_POOL);
+      if (category.includes('여성')) {
+        fallbackPool = fallbackPool.filter((b) => b.vocal_gender === 'FEMALE');
+      } else if (category.includes('남성')) {
+        fallbackPool = fallbackPool.filter((b) => b.vocal_gender === 'MALE');
+      } else if (category.includes('J-Rock') || category.includes('일본')) {
+        fallbackPool = fallbackPool.filter((b) => b.genre.includes('J-'));
+      }
+      discoveredList = fallbackPool.slice(0, 6);
+    }
+
+    // AUTO_ADD 액션인 경우 발굴된 밴드 중 상위 autoAddCount개 팀을 즉시 target_artists에 1순위로 등록
+    if (action === 'AUTO_ADD') {
+      const toInsert = discoveredList.slice(0, autoAddCount);
+      const addedArtists: any[] = [];
+
+      for (const item of toInsert) {
+        const { data: inserted, error: insErr } = await supabase
+          .from('target_artists')
+          .insert([
+            {
+              name: item.name,
+              search_alias: item.search_alias,
+              vocal_gender: item.vocal_gender,
+              priority: 1,
+              is_active: true,
+            },
+          ])
+          .select()
+          .single();
+
+        if (!insErr && inserted) {
+          addedArtists.push(inserted);
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        model: usedModel,
+        addedCount: addedArtists.length,
+        addedArtists,
+        message:
+          addedArtists.length > 0
+            ? `[자동 아티스트 확장] 모든 수집곡 분석 완료(100%) 감지 → 신규 밴드 ${addedArtists
+                .map((a) => `${a.name}(${a.search_alias})`)
+                .join(', ')} 자동 등록 완료!`
+            : '추가할 신규 밴드가 없습니다.',
+      });
     }
 
     return NextResponse.json({
       success: true,
-      model: 'curated-fallback',
-      candidates: fallbackPool.slice(0, 6),
+      model: usedModel,
+      candidates: discoveredList,
     });
   } catch (err: any) {
     console.error('[LLM 밴드 탐색 API 에러]:', err);

@@ -72,6 +72,7 @@ export default function HarvestAdminPage() {
 
   const [countdown, setCountdown] = useState<number>(REFRESH_INTERVAL_SECONDS);
   const [isAutoRefreshing, setIsAutoRefreshing] = useState<boolean>(false);
+  const [isAutoExpandingArtists, setIsAutoExpandingArtists] = useState<boolean>(false);
 
   const stats: HarvestStats = useMemo(() => {
     const totalSongs = songs.length;
@@ -130,6 +131,60 @@ export default function HarvestAdminPage() {
   }, []);
 
   const isBackfillingRef = useRef<boolean>(false);
+  const isAutoExpandingRef = useRef<boolean>(false);
+  const lastAutoExpandedSongCountRef = useRef<number>(-1);
+
+  // 총 수집 곡수와 분석 완료 곡수가 일치(100% 분석 완료)할 때 자동으로 수집 대상 아티스트(밴드)를 추가하는 파이프라인
+  const runAutoExpandTargetArtists = async (currentSongCount: number) => {
+    if (isAutoExpandingRef.current) return;
+    isAutoExpandingRef.current = true;
+    lastAutoExpandedSongCountRef.current = currentSongCount;
+    setIsAutoExpandingArtists(true);
+
+    try {
+      const res = await fetch('/api/artists/discover-llm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({
+          action: 'AUTO_ADD',
+          count: 2,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.addedCount > 0) {
+        setLastMessage(data.message);
+        await fetchArtists();
+
+        // 신규 밴드가 추가되었으므로 즉시 다음 밴드 곡 수집(/api/songs/sync)도 연쇄 가동
+        const syncRes = await fetch('/api/songs/sync', { cache: 'no-store' });
+        const syncData = await syncRes.json();
+        if (syncRes.ok && syncData.success && syncData.lastExecution?.count > 0) {
+          setLastMessage(
+            `${data.message} → 곧바로 '${syncData.lastExecution.artist}' ${syncData.lastExecution.count}곡 수집 완료`
+          );
+          await Promise.all([fetchArtists(), fetchSongs(true)]);
+        }
+      }
+    } catch (e) {
+      console.error('[자동 아티스트 확장 오류]:', e);
+    } finally {
+      isAutoExpandingRef.current = false;
+      setIsAutoExpandingArtists(false);
+    }
+  };
+
+  // 총 수집된 곡과 분석 완료된 곡이 같아지면 자동으로 수집 대상 아티스트 확장 실행
+  useEffect(() => {
+    if (!isAuthenticated || loading || isBackfilling) return;
+    if (
+      stats.totalSongs > 0 &&
+      stats.totalSongs === stats.analyzedBpmCount &&
+      lastAutoExpandedSongCountRef.current !== stats.totalSongs
+    ) {
+      runAutoExpandTargetArtists(stats.totalSongs);
+    }
+  }, [stats.totalSongs, stats.analyzedBpmCount, isAuthenticated, loading, isBackfilling]);
 
   const refreshAllData = async (silent = false) => {
     if (!silent) setIsAutoRefreshing(true);
@@ -735,18 +790,61 @@ export default function HarvestAdminPage() {
     setIsLocalizingTitles(true);
     setLastMessage("Apple Music 한국 스토어 공식 한글 곡명 매칭 및 '한글명 (영문명)' 변환 진행 중...");
 
-    try {
-      const res = await fetch('/api/songs/localize-titles', {
-        method: 'POST',
-        cache: 'no-store',
-      });
-      const data = await res.json();
+    let offset = 0;
+    let totalUpdated = 0;
+    const allExamples: string[] = [];
 
-      if (res.ok && data.success) {
-        setLastMessage(data.message);
-        await fetchSongs(true);
-      } else {
-        setLastMessage(`곡명 한글화 실패: ${data.message || data.error}`);
+    try {
+      while (true) {
+        const res = await fetch('/api/songs/localize-titles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ offset, batchSize: 8 }),
+          cache: 'no-store',
+        });
+
+        const rawText = await res.text();
+        let data: any = null;
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          throw new Error(
+            res.status === 504
+              ? '서버 응답 시간 초과(504)가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+              : `서버 응답 파싱 실패 (HTTP ${res.status})`
+          );
+        }
+
+        if (!res.ok || !data?.success) {
+          setLastMessage(`곡명 한글화 실패: ${data?.message || data?.error || '오류 발생'}`);
+          break;
+        }
+
+        totalUpdated += Number(data.updatedCount || 0);
+        if (Array.isArray(data.examples)) {
+          for (const ex of data.examples) {
+            if (allExamples.length < 5) allExamples.push(ex);
+          }
+        }
+
+        const totalArtists = Number(data.totalArtists || 0);
+        const nextOffset = Number(data.nextOffset || 0);
+
+        if (data.hasMore && nextOffset > offset) {
+          offset = nextOffset;
+          setLastMessage(
+            `[영문 곡명 한글화 (${Math.min(offset, totalArtists)}/${totalArtists} 밴드 스캔)] 현재 ${totalUpdated}곡 변환 완료...`
+          );
+        } else {
+          const exampleStr = allExamples.length > 0 ? ` (${allExamples.join(', ')})` : '';
+          setLastMessage(
+            totalUpdated > 0
+              ? `총 ${totalUpdated}곡의 제목이 '한글명 (영문명)' 형태로 변환되었습니다!${exampleStr}`
+              : '추가로 변환할 한글 공식 곡명 대상이 없습니다 (이미 변환 완료되었거나 원래 영어 제목인 곡은 유지됨).'
+          );
+          await fetchSongs(true);
+          break;
+        }
       }
     } catch (err: any) {
       setLastMessage(`곡명 한글화 오류: ${err.message}`);
@@ -1074,6 +1172,7 @@ export default function HarvestAdminPage() {
           refreshIntervalSeconds={REFRESH_INTERVAL_SECONDS}
           isAutoRefreshing={isAutoRefreshing}
           isAnalyzingAudio={isBackfilling}
+          isAutoExpandingArtists={isAutoExpandingArtists}
           currentAnalyzingSong={currentAnalyzingSong}
           onManualRefreshNow={handleManualRefreshNow}
           onOpenDiscoverArtists={() => setIsDiscoverOpen(true)}

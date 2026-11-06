@@ -18,6 +18,7 @@ interface AdminStatsGridProps {
   refreshIntervalSeconds: number;
   isAutoRefreshing: boolean;
   isAnalyzingAudio?: boolean;
+  isAutoExpandingArtists?: boolean;
   currentAnalyzingSong?: AnalyzingSongInfo | null;
   onManualRefreshNow: () => void;
   onOpenDiscoverArtists?: () => void;
@@ -35,10 +36,13 @@ export default function AdminStatsGrid({
   refreshIntervalSeconds,
   isAutoRefreshing,
   isAnalyzingAudio = false,
+  isAutoExpandingArtists = false,
   currentAnalyzingSong = null,
   onManualRefreshNow,
   onOpenDiscoverArtists,
 }: AdminStatsGridProps) {
+  const isAllAnalyzed = stats.totalSongs > 0 && stats.totalSongs === stats.analyzedBpmCount;
+
   return (
     <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
       <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
@@ -46,20 +50,36 @@ export default function AdminStatsGrid({
           <span className="text-xs text-slate-400 block mb-1">총 수집 곡수</span>
           <span className="text-2xl font-black text-slate-100">{stats.totalSongs}곡</span>
         </div>
-        <span className="text-[10px] text-slate-500 mt-2 block">
-          분석 완료: {stats.analyzedBpmCount}곡
-        </span>
+        <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-1 text-[10px]">
+          <span className={isAllAnalyzed ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
+            분석 완료: {stats.analyzedBpmCount}곡
+          </span>
+          {isAllAnalyzed && (
+            <span className="px-1.5 py-0.2 rounded bg-emerald-950/90 border border-emerald-800 text-emerald-300 font-bold">
+              100% 일치
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
         <div>
-          <span className="text-xs text-slate-400 block mb-1">수집 대상 아티스트</span>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-slate-400">수집 대상 아티스트</span>
+            {isAutoExpandingArtists && (
+              <Sparkles className="w-3 h-3 animate-spin text-indigo-400" />
+            )}
+          </div>
           <span className="text-2xl font-black text-slate-100">
             {stats.activeArtists}/{stats.totalArtists}팀
           </span>
         </div>
         <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-1">
-          <span className="text-[10px] text-slate-500 truncate">2분 주기 자동 수집</span>
+          <span className="text-[10px] text-slate-500 truncate">
+            {isAutoExpandingArtists
+              ? '신규 밴드 자동 확장 중...'
+              : '분석완료 일치 시 자동 확장'}
+          </span>
           {onOpenDiscoverArtists && (
             <button
               type="button"
