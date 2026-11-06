@@ -22,6 +22,7 @@ import DiscoverArtistsModal from './components/DiscoverArtistsModal';
 
 const REFRESH_INTERVAL_SECONDS = 120; // 2분 주기 갱신 및 자동 수집
 const BACKFILL_INTERVAL_SECONDS = 60; // 1분 주기 BPM/Key 오디오 실측
+const LOCALIZE_INTERVAL_SECONDS = 300; // 5분 주기 영문 곡명 한글화 자동 스캔
 
 export default function HarvestAdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -131,6 +132,7 @@ export default function HarvestAdminPage() {
   }, []);
 
   const isBackfillingRef = useRef<boolean>(false);
+  const isLocalizingRef = useRef<boolean>(false);
   const isAutoExpandingRef = useRef<boolean>(false);
   const lastAutoExpandedSongCountRef = useRef<number>(-1);
 
@@ -292,6 +294,65 @@ export default function HarvestAdminPage() {
     }
   };
 
+  // 5분 주기 자동 영문 곡명 한글화(한글명 (영문명)) 백그라운드 배치 스캔
+  const runSilentLocalizeTitles = async () => {
+    if (isLocalizingRef.current) return;
+    isLocalizingRef.current = true;
+    setIsLocalizingTitles(true);
+
+    let offset = 0;
+    let totalUpdated = 0;
+    const allExamples: string[] = [];
+
+    try {
+      while (true) {
+        const res = await fetch('/api/songs/localize-titles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ offset, batchSize: 8 }),
+          cache: 'no-store',
+        });
+
+        const rawText = await res.text();
+        let data: any = null;
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          break;
+        }
+
+        if (!res.ok || !data?.success) break;
+
+        totalUpdated += Number(data.updatedCount || 0);
+        if (Array.isArray(data.examples)) {
+          for (const ex of data.examples) {
+            if (allExamples.length < 5) allExamples.push(ex);
+          }
+        }
+
+        const nextOffset = Number(data.nextOffset || 0);
+        if (data.hasMore && nextOffset > offset) {
+          offset = nextOffset;
+        } else {
+          break;
+        }
+      }
+
+      if (totalUpdated > 0) {
+        const exampleStr = allExamples.length > 0 ? ` (${allExamples.join(', ')})` : '';
+        setLastMessage(
+          `[5분 주기 자동 한글화] 총 ${totalUpdated}곡의 제목이 '한글명 (영문명)' 형태로 변환되었습니다!${exampleStr}`
+        );
+        await fetchSongs(true);
+      }
+    } catch (e) {
+      console.error('[5분 주기 자동 곡명 한글화 오류]:', e);
+    } finally {
+      isLocalizingRef.current = false;
+      setIsLocalizingTitles(false);
+    }
+  };
+
   // 2분 주기 자동 밴드 음원 수집(iTunes) + 데이터 갱신
   const runAutoHarvestCycle = async () => {
     setIsAutoRefreshing(true);
@@ -418,6 +479,17 @@ export default function HarvestAdminPage() {
       runSilentBackfill();
     }
   }, [countdown, isAuthenticated]);
+
+  // 5분(300초) 주기 영문 곡명 한글화 자동 스캔 타이머
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const localizeTimer = setInterval(() => {
+      runSilentLocalizeTitles();
+    }, LOCALIZE_INTERVAL_SECONDS * 1000);
+
+    return () => clearInterval(localizeTimer);
+  }, [isAuthenticated]);
 
   function handleManualRefreshNow() {
     setCountdown(REFRESH_INTERVAL_SECONDS);
@@ -779,6 +851,7 @@ export default function HarvestAdminPage() {
   }
 
   async function handleLocalizeSongTitles() {
+    if (isLocalizingRef.current) return;
     if (
       !confirm(
         "Apple Music 한국 스토어 공식 곡명을 조회하여 영문 단독 제목을 '한글명 (영문명)' 형태로 일괄 변환하시겠습니까?"
@@ -787,6 +860,7 @@ export default function HarvestAdminPage() {
       return;
     }
 
+    isLocalizingRef.current = true;
     setIsLocalizingTitles(true);
     setLastMessage("Apple Music 한국 스토어 공식 한글 곡명 매칭 및 '한글명 (영문명)' 변환 진행 중...");
 
@@ -849,6 +923,7 @@ export default function HarvestAdminPage() {
     } catch (err: any) {
       setLastMessage(`곡명 한글화 오류: ${err.message}`);
     } finally {
+      isLocalizingRef.current = false;
       setIsLocalizingTitles(false);
     }
   }
@@ -1178,7 +1253,7 @@ export default function HarvestAdminPage() {
           onOpenDiscoverArtists={() => setIsDiscoverOpen(true)}
         />
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <div className="flex flex-col gap-6">
           <TargetArtistPanel
             artists={artists}
             isArtistPanelOpen={isArtistPanelOpen}

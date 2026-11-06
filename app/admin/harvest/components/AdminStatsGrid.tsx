@@ -74,7 +74,7 @@ export default function AdminStatsGrid({
             {stats.activeArtists}/{stats.totalArtists}팀
           </span>
         </div>
-        <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-1">
+        <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-1.5 flex-wrap">
           <span className="text-[10px] text-slate-500 truncate">
             {isAutoExpandingArtists
               ? '신규 밴드 자동 확장 중...'
