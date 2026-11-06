@@ -133,11 +133,11 @@ export function cleanTitleForSearch(title?: string | null): string {
 }
 
 /**
- * 밴드 커버 영상 검색 URL 생성 (예: "러브홀릭 그대만 있다면 밴드커버")
+ * 밴드 커버 영상 검색 URL 생성 (예: "러브홀릭 그대만 있다면 band cover")
  */
 export function getYouTubeCoverUrl(artist: string, title: string): string {
   const cleanTitle = cleanTitleForSearch(title);
-  const query = `${artist} ${cleanTitle} 밴드커버`.trim();
+  const query = `${artist} ${cleanTitle} band cover`.trim();
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
 }
 
