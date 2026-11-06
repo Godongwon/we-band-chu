@@ -86,6 +86,28 @@ export default function HarvestAdminPage() {
   const [countdown, setCountdown] = useState<number>(REFRESH_INTERVAL_SECONDS);
   const [isAutoRefreshing, setIsAutoRefreshing] = useState<boolean>(false);
   const [isAutoExpandingArtists, setIsAutoExpandingArtists] = useState<boolean>(false);
+  const [isAutoExpandEnabled, setIsAutoExpandEnabled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('admin_auto_expand_artists');
+      return saved === 'true';
+    }
+    return false;
+  });
+
+  const handleToggleAutoExpand = () => {
+    setIsAutoExpandEnabled((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('admin_auto_expand_artists', String(next));
+      }
+      setLastMessage(
+        next
+          ? '다른 밴드 자동 확장 기능이 [ON] 활성화되었습니다. 모든 곡 분석 완료 시 자동 실행됩니다.'
+          : '다른 밴드 자동 확장 기능이 [OFF] 비활성화되었습니다.'
+      );
+      return next;
+    });
+  };
 
   const stats: HarvestStats = useMemo(() => {
     const totalSongs = songs.length;
@@ -202,17 +224,26 @@ export default function HarvestAdminPage() {
     }
   };
 
-  // 총 수집된 곡과 분석 완료된 곡이 같아지면 자동으로 수집 대상 아티스트 확장 실행
+  // ON 상태일 때, 총 수집된 곡의 BPM 및 조성이 모두 분석 완료(100%)되면 자동으로 수집 대상 아티스트 확장 실행
   useEffect(() => {
-    if (!isAuthenticated || loading || isBackfilling) return;
-    if (
+    if (!isAuthenticated || loading || isBackfilling || !isAutoExpandEnabled) return;
+    const isAllAnalyzed =
       stats.totalSongs > 0 &&
-      stats.totalSongs === stats.analyzedBpmCount &&
-      lastAutoExpandedSongCountRef.current !== stats.totalSongs
-    ) {
+      stats.analyzedBpmCount === stats.totalSongs &&
+      stats.analyzedKeyCount === stats.totalSongs;
+
+    if (isAllAnalyzed && lastAutoExpandedSongCountRef.current !== stats.totalSongs) {
       runAutoExpandTargetArtists(stats.totalSongs);
     }
-  }, [stats.totalSongs, stats.analyzedBpmCount, isAuthenticated, loading, isBackfilling]);
+  }, [
+    stats.totalSongs,
+    stats.analyzedBpmCount,
+    stats.analyzedKeyCount,
+    isAutoExpandEnabled,
+    isAuthenticated,
+    loading,
+    isBackfilling,
+  ]);
 
   const refreshAllData = async (silent = false) => {
     if (!silent) setIsAutoRefreshing(true);
@@ -1375,9 +1406,11 @@ export default function HarvestAdminPage() {
           isAutoRefreshing={isAutoRefreshing}
           isAnalyzingAudio={isBackfilling}
           isAutoExpandingArtists={isAutoExpandingArtists}
+          isAutoExpandEnabled={isAutoExpandEnabled}
           currentAnalyzingSong={currentAnalyzingSong}
           onManualRefreshNow={handleManualRefreshNow}
           onOpenDiscoverArtists={() => setIsDiscoverOpen(true)}
+          onToggleAutoExpand={handleToggleAutoExpand}
         />
 
         <div className="flex flex-col gap-6">
@@ -1480,6 +1513,8 @@ export default function HarvestAdminPage() {
       <DiscoverArtistsModal
         isOpen={isDiscoverOpen}
         existingArtistsCount={artists.length}
+        isAutoExpandEnabled={isAutoExpandEnabled}
+        onToggleAutoExpand={handleToggleAutoExpand}
         onClose={() => setIsDiscoverOpen(false)}
         onArtistAdded={(msg) => {
           setLastMessage(msg);

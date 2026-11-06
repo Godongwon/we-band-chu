@@ -14,6 +14,8 @@ export interface DiscoveredArtistItem {
 interface DiscoverArtistsModalProps {
   isOpen: boolean;
   existingArtistsCount: number;
+  isAutoExpandEnabled?: boolean;
+  onToggleAutoExpand?: () => void;
   onClose: () => void;
   onArtistAdded: (message: string) => void;
 }
@@ -49,6 +51,8 @@ function formatGenderBadge(gender: string) {
 export default function DiscoverArtistsModal({
   isOpen,
   existingArtistsCount,
+  isAutoExpandEnabled = false,
+  onToggleAutoExpand,
   onClose,
   onArtistAdded,
 }: DiscoverArtistsModalProps) {
@@ -217,13 +221,39 @@ export default function DiscoverArtistsModal({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {onToggleAutoExpand && (
+              <button
+                type="button"
+                onClick={onToggleAutoExpand}
+                title={
+                  isAutoExpandEnabled
+                    ? '모든 곡 분석 완료 시 다른 밴드 자동 확장 [ON] (클릭하여 끄기)'
+                    : '모든 곡 분석 완료 시 다른 밴드 자동 확장 [OFF] (클릭하여 켜기)'
+                }
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-bold transition shadow-sm cursor-pointer ${
+                  isAutoExpandEnabled
+                    ? 'bg-emerald-950/90 border-emerald-500/80 text-emerald-300 hover:bg-emerald-900'
+                    : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    isAutoExpandEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'
+                  }`}
+                />
+                <span>자동확장: {isAutoExpandEnabled ? 'ON' : 'OFF'}</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* 검색 조건 영역 */}

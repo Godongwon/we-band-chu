@@ -19,9 +19,11 @@ interface AdminStatsGridProps {
   isAutoRefreshing: boolean;
   isAnalyzingAudio?: boolean;
   isAutoExpandingArtists?: boolean;
+  isAutoExpandEnabled?: boolean;
   currentAnalyzingSong?: AnalyzingSongInfo | null;
   onManualRefreshNow: () => void;
   onOpenDiscoverArtists?: () => void;
+  onToggleAutoExpand?: () => void;
 }
 
 function formatCountdown(seconds: number) {
@@ -37,11 +39,16 @@ export default function AdminStatsGrid({
   isAutoRefreshing,
   isAnalyzingAudio = false,
   isAutoExpandingArtists = false,
+  isAutoExpandEnabled = false,
   currentAnalyzingSong = null,
   onManualRefreshNow,
   onOpenDiscoverArtists,
+  onToggleAutoExpand,
 }: AdminStatsGridProps) {
-  const isAllAnalyzed = stats.totalSongs > 0 && stats.totalSongs === stats.analyzedBpmCount;
+  const isAllAnalyzed =
+    stats.totalSongs > 0 &&
+    stats.totalSongs === stats.analyzedBpmCount &&
+    stats.totalSongs === stats.analyzedKeyCount;
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
@@ -75,11 +82,40 @@ export default function AdminStatsGrid({
           </span>
         </div>
         <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-1.5 flex-wrap">
-          <span className="text-[10px] text-slate-500 truncate">
-            {isAutoExpandingArtists
-              ? '신규 밴드 자동 확장 중...'
-              : '분석완료 일치 시 자동 확장'}
-          </span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {onToggleAutoExpand && (
+              <button
+                type="button"
+                onClick={onToggleAutoExpand}
+                title={
+                  isAutoExpandEnabled
+                    ? '모든 곡 분석 완료 시 다른 밴드 자동 확장 [ON] (클릭하여 끄기)'
+                    : '모든 곡 분석 완료 시 다른 밴드 자동 확장 [OFF] (클릭하여 켜기)'
+                }
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold transition shadow-sm cursor-pointer ${
+                  isAutoExpandEnabled
+                    ? 'bg-emerald-950/90 border-emerald-500/80 text-emerald-300 hover:bg-emerald-900'
+                    : 'bg-slate-950/80 border-slate-700/80 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    isAutoExpandEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'
+                  }`}
+                />
+                <span>자동확장: {isAutoExpandEnabled ? 'ON' : 'OFF'}</span>
+              </button>
+            )}
+
+            <span className="text-[10px] text-slate-500 truncate">
+              {isAutoExpandingArtists
+                ? '새 밴드 탐색 중...'
+                : isAutoExpandEnabled
+                ? (isAllAnalyzed ? '전곡 완료! 탐색 대기' : '전곡 완료 시 자동 탐색')
+                : '자동 탐색 꺼짐'}
+            </span>
+          </div>
+
           {onOpenDiscoverArtists && (
             <button
               type="button"
