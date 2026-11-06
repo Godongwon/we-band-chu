@@ -47,12 +47,17 @@ export default function WorkspaceToolbar({
     <>
       {/* 상단 헤더 */}
       <header className="flex items-center justify-between pb-3 border-b border-slate-900">
-        <div className="flex items-center gap-2">
-          <span className="text-xl font-black bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-400 bg-clip-text text-transparent">
-            We.Band.Chu
-          </span>
-          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
-            우밴추
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-2">
+            <span className="text-xl font-black bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-400 bg-clip-text text-transparent">
+              We.Band.Chu
+            </span>
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
+              우밴추
+            </span>
+          </div>
+          <span className="text-[11px] font-medium text-slate-400 tracking-tight pl-0.5">
+            우리 밴드의 노래추천
           </span>
         </div>
 
