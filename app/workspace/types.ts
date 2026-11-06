@@ -118,3 +118,34 @@ export function isSameSong(a?: SongItem | null, b?: SongItem | null): boolean {
   }
   return getSongCompositeKey(a) === getSongCompositeKey(b);
 }
+
+/**
+ * 유튜브 검색을 위해 곡명에서 괄호 부제/영문명 (예: "(If Only)", "[Live]" 등)을 제거하고 공백을 정돈합니다.
+ */
+export function cleanTitleForSearch(title?: string | null): string {
+  if (!title) return '';
+  const cleaned = title
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || title.trim();
+}
+
+/**
+ * 밴드 커버 영상 검색 URL 생성 (예: "러브홀릭 그대만 있다면 밴드커버")
+ */
+export function getYouTubeCoverUrl(artist: string, title: string): string {
+  const cleanTitle = cleanTitleForSearch(title);
+  const query = `${artist} ${cleanTitle} 밴드커버`.trim();
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+}
+
+/**
+ * 라이브 무대 검색 URL 생성 (예: "러브홀릭 그대만 있다면 live")
+ */
+export function getYouTubeLiveUrl(artist: string, title: string): string {
+  const cleanTitle = cleanTitleForSearch(title);
+  const query = `${artist} ${cleanTitle} live`.trim();
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+}

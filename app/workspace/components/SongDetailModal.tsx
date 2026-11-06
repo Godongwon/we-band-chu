@@ -16,7 +16,7 @@ import {
   Plus,
   Check,
 } from 'lucide-react';
-import { SongItem, BandProfile, isSameSong } from '../types';
+import { SongItem, BandProfile, isSameSong, cleanTitleForSearch, getYouTubeLiveUrl } from '../types';
 import { REPERTOIRE_STATUS_OPTIONS } from './RepertoirePanel';
 
 interface SongDetailModalProps {
@@ -144,6 +144,8 @@ export default function SongDetailModal({
     }
   };
 
+  const cleanTitle = cleanTitleForSearch(selectedSong.title);
+
   return (
     <div
       className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
@@ -212,7 +214,7 @@ export default function SongDetailModal({
 
           <div className="grid grid-cols-2 gap-2 text-[11px]">
             <a
-              href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${selectedSong.title} 기타 TAB 악보 cover`)}`}
+              href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${cleanTitle} 기타 TAB 악보 cover`)}`}
               target="_blank"
               rel="noopener noreferrer"
               className="p-3 bg-[#090c1d] hover:bg-[#13193a] border border-slate-800/80 hover:border-amber-500/50 rounded-xl flex items-center justify-between transition cursor-pointer group"
@@ -232,7 +234,7 @@ export default function SongDetailModal({
             </a>
 
             <a
-              href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${selectedSong.title} 베이스 악보 cover`)}`}
+              href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${cleanTitle} 베이스 악보 cover`)}`}
               target="_blank"
               rel="noopener noreferrer"
               className="p-3 bg-[#090c1d] hover:bg-[#13193a] border border-slate-800/80 hover:border-cyan-500/50 rounded-xl flex items-center justify-between transition cursor-pointer group"
@@ -250,7 +252,7 @@ export default function SongDetailModal({
             </a>
 
             <a
-              href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${selectedSong.title} 드럼 악보 cover`)}`}
+              href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${cleanTitle} 드럼 악보 cover`)}`}
               target="_blank"
               rel="noopener noreferrer"
               className="p-3 bg-[#090c1d] hover:bg-[#13193a] border border-slate-800/80 hover:border-emerald-500/50 rounded-xl flex items-center justify-between transition cursor-pointer group"
@@ -268,7 +270,7 @@ export default function SongDetailModal({
             </a>
 
             <a
-              href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${selectedSong.title} 피아노 건반 악보 cover`)}`}
+              href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${cleanTitle} 피아노 건반 악보 cover`)}`}
               target="_blank"
               rel="noopener noreferrer"
               className="p-3 bg-[#090c1d] hover:bg-[#13193a] border border-slate-800/80 hover:border-pink-500/50 rounded-xl flex items-center justify-between transition cursor-pointer group"
@@ -335,7 +337,7 @@ export default function SongDetailModal({
             </button>
 
             <a
-              href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${selectedSong.title} 라이브`)}`}
+              href={getYouTubeLiveUrl(selectedSong.artist, selectedSong.title)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold transition"
@@ -347,7 +349,7 @@ export default function SongDetailModal({
             <a
               href={
                 selectedSong.youtube_url ||
-                `https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${selectedSong.title}`)}`
+                `https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${cleanTitle}`)}`
               }
               target="_blank"
               rel="noopener noreferrer"

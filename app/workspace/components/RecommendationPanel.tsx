@@ -12,7 +12,7 @@ import {
   Loader2,
   Volume2,
 } from 'lucide-react';
-import { SongItem } from '../types';
+import { SongItem, getYouTubeCoverUrl, getYouTubeLiveUrl } from '../types';
 
 interface RecommendationPanelProps {
   isSearchActive: boolean;
@@ -275,7 +275,7 @@ export default function RecommendationPanel({
 
                   <div className="flex items-center gap-3 pt-1 text-[11px]">
                     <a
-                      href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${song.artist} ${song.title} 커버`)}`}
+                      href={getYouTubeCoverUrl(song.artist, song.title)}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
@@ -284,7 +284,7 @@ export default function RecommendationPanel({
                       🎯 커버 영상
                     </a>
                     <a
-                      href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${song.artist} ${song.title} 라이브`)}`}
+                      href={getYouTubeLiveUrl(song.artist, song.title)}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}

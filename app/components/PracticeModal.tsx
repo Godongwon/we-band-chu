@@ -12,8 +12,8 @@ interface PracticeModalProps {
 export default function PracticeModal({ song, currentBand, onClose }: PracticeModalProps) {
   if (!song) return null;
 
-  const baseQuery = `${song.artist} ${song.title}`;
-  const cleanTitle = song.title.replace(/\(.*?\)|\[.*?\]/g, '').trim();
+  const cleanTitle = song.title.replace(/\(.*?\)|\[.*?\]/g, '').trim() || song.title;
+  const baseQuery = `${song.artist} ${cleanTitle}`;
 
   const getAkbobadaUrl = (partKeyword: string) =>
     `https://www.google.com/search?q=site:akbobada.com+${encodeURIComponent(cleanTitle + ' ' + partKeyword)}`;

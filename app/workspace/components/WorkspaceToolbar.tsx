@@ -14,7 +14,7 @@ import {
   Check,
   Bot,
 } from 'lucide-react';
-import { BandProfile, SongItem, getSongCompositeKey } from '../types';
+import { BandProfile, SongItem, getSongCompositeKey, getYouTubeCoverUrl, getYouTubeLiveUrl } from '../types';
 import { REPERTOIRE_STATUS_OPTIONS } from './RepertoirePanel';
 
 interface WorkspaceToolbarProps {
@@ -336,9 +336,7 @@ export default function WorkspaceToolbar({
 
                         <div className="flex items-center gap-3 pt-0.5 text-[11px]">
                           <a
-                            href={`https://www.youtube.com/results?search_query=${encodeURIComponent(
-                              `${song.artist} ${song.title} 커버`
-                            )}`}
+                            href={getYouTubeCoverUrl(song.artist, song.title)}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
@@ -347,9 +345,7 @@ export default function WorkspaceToolbar({
                             🎯 커버 영상
                           </a>
                           <a
-                            href={`https://www.youtube.com/results?search_query=${encodeURIComponent(
-                              `${song.artist} ${song.title} 라이브`
-                            )}`}
+                            href={getYouTubeLiveUrl(song.artist, song.title)}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
