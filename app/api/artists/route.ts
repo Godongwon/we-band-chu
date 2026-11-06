@@ -73,3 +73,36 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
 }
+
+export async function PATCH(req: Request) {
+  try {
+    const { id, search_alias, vocal_gender, priority, is_active } = await req.json();
+
+    if (!id) {
+      return NextResponse.json({ success: false, message: '밴드 ID가 필요합니다.' }, { status: 400 });
+    }
+
+    const updatePayload: any = {};
+    if (search_alias !== undefined) updatePayload.search_alias = search_alias;
+    if (vocal_gender !== undefined) updatePayload.vocal_gender = vocal_gender;
+    if (priority !== undefined) updatePayload.priority = Number(priority);
+    if (is_active !== undefined) updatePayload.is_active = Boolean(is_active);
+
+    const { data, error } = await supabase
+      .from('target_artists')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return NextResponse.json({
+      success: true,
+      message: '밴드 정보가 업데이트되었습니다.',
+      artist: data,
+    });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+  }
+}

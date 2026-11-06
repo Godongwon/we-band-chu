@@ -16,6 +16,7 @@ import HarvestedSongPanel from './components/HarvestedSongPanel';
 import SuggestionsModal from './components/SuggestionsModal';
 import ReportsModal from './components/ReportsModal';
 import AddArtistModal from './components/AddArtistModal';
+import ArtistDetailModal from './components/ArtistDetailModal';
 
 const REFRESH_INTERVAL_SECONDS = 120; // 2분 주기 갱신 및 자동 수집
 const BACKFILL_INTERVAL_SECONDS = 60; // 1분 주기 BPM/Key 오디오 실측
@@ -58,6 +59,7 @@ export default function HarvestAdminPage() {
   const [newArtistName, setNewArtistName] = useState<string>('');
   const [newArtistPriority, setNewArtistPriority] = useState<number>(1);
   const [addingArtist, setAddingArtist] = useState<boolean>(false);
+  const [detailArtist, setDetailArtist] = useState<TargetArtist | null>(null);
 
   const [countdown, setCountdown] = useState<number>(REFRESH_INTERVAL_SECONDS);
   const [isAutoRefreshing, setIsAutoRefreshing] = useState<boolean>(false);
@@ -288,6 +290,11 @@ export default function HarvestAdminPage() {
       const data = await res.json();
       if (res.ok && data.artists) {
         setArtists(data.artists);
+        setDetailArtist((prev) => {
+          if (!prev) return null;
+          const updated = data.artists.find((a: TargetArtist) => a.id === prev.id);
+          return updated || null;
+        });
       }
     } catch (err: any) {
       console.error('[관리자] 아티스트 목록 로드 에러:', err.message);
@@ -375,6 +382,9 @@ export default function HarvestAdminPage() {
         setArtists((prev) =>
           prev.map((a) => (a.id === artistId ? { ...a, priority: newPriority } : a))
         );
+        setDetailArtist((prev) =>
+          prev && prev.id === artistId ? { ...prev, priority: newPriority } : prev
+        );
       } else {
         alert(`순위 변경 실패: ${data.message || '오류 발생'}`);
       }
@@ -382,6 +392,33 @@ export default function HarvestAdminPage() {
       alert(`통신 오류: ${err.message}`);
     } finally {
       setUpdatingPriorityId(null);
+    }
+  }
+
+  async function handleUpdateArtistInfo(
+    artistId: string,
+    payload: {
+      search_alias?: string | null;
+      vocal_gender?: string | null;
+      priority?: number;
+    }
+  ) {
+    try {
+      const res = await fetch('/api/artists', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: artistId, ...payload }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLastMessage(data.message || '밴드 정보가 수정되었습니다.');
+        await fetchArtists();
+      } else {
+        alert(`밴드 정보 수정 실패: ${data.message || '오류 발생'}`);
+      }
+    } catch (err: any) {
+      alert(`통신 오류: ${err.message}`);
     }
   }
 
@@ -810,6 +847,7 @@ export default function HarvestAdminPage() {
             onTogglePanel={setIsArtistPanelOpen}
             onOpenAddArtist={() => setIsAddArtistOpen(true)}
             onSelectArtist={setSelectedArtist}
+            onOpenArtistDetail={(artist) => setDetailArtist(artist)}
             onRefreshWithLLM={handleRefreshWithLLM}
             onUpdatePriority={handleUpdatePriority}
             onDeleteArtist={handleDeleteArtist}
@@ -862,6 +900,17 @@ export default function HarvestAdminPage() {
         onChangePriority={setNewArtistPriority}
         onClose={() => setIsAddArtistOpen(false)}
         onSubmit={handleAddTargetArtist}
+      />
+
+      <ArtistDetailModal
+        artist={detailArtist}
+        songs={songs}
+        isRefreshingLLM={refreshingId === detailArtist?.id}
+        onClose={() => setDetailArtist(null)}
+        onRefreshWithLLM={handleRefreshWithLLM}
+        onUpdateArtistInfo={handleUpdateArtistInfo}
+        onDeleteArtist={handleDeleteArtist}
+        onFilterByArtist={(artistName) => setSelectedArtist(artistName)}
       />
     </main>
   );

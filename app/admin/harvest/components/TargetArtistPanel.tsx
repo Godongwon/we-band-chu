@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Radio, ChevronLeft, ChevronRight, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { Radio, ChevronLeft, ChevronRight, Plus, Sparkles, Trash2, Info } from 'lucide-react';
 import { TargetArtist } from '../types';
 
 interface TargetArtistPanelProps {
@@ -13,6 +13,7 @@ interface TargetArtistPanelProps {
   onTogglePanel: (open: boolean) => void;
   onOpenAddArtist: () => void;
   onSelectArtist: (artistName: string) => void;
+  onOpenArtistDetail: (artist: TargetArtist) => void;
   onRefreshWithLLM: (e: React.MouseEvent, artist: TargetArtist) => void;
   onUpdatePriority: (artistId: string, newPriority: number) => void;
   onDeleteArtist: (e: React.MouseEvent, artist: TargetArtist) => void;
@@ -27,6 +28,7 @@ export default function TargetArtistPanel({
   onTogglePanel,
   onOpenAddArtist,
   onSelectArtist,
+  onOpenArtistDetail,
   onRefreshWithLLM,
   onUpdatePriority,
   onDeleteArtist,
@@ -103,7 +105,7 @@ export default function TargetArtistPanel({
             return (
               <div
                 key={artist.id}
-                onClick={() => onSelectArtist(isSelected ? 'ALL' : artist.name)}
+                onClick={() => onSelectArtist(artist.name)}
                 className={`p-2.5 rounded-xl border text-xs cursor-pointer transition flex items-center justify-between group ${
                   isSelected
                     ? 'bg-indigo-950/70 border-indigo-700 text-indigo-200'
@@ -113,9 +115,16 @@ export default function TargetArtistPanel({
                 }`}
               >
                 <div className="min-w-0 flex-1 pr-2">
-                  <span className={`font-bold block truncate ${artist.priority === 3 ? 'text-slate-400' : 'text-slate-200'}`}>
-                    {artist.name}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`font-bold block truncate ${artist.priority === 3 ? 'text-slate-400' : 'text-slate-200'}`}>
+                      {artist.name}
+                    </span>
+                    {artist.search_alias && artist.search_alias !== artist.name && (
+                      <span className="text-[10px] text-indigo-400/80 truncate">
+                        ({artist.search_alias})
+                      </span>
+                    )}
+                  </div>
                   <span className="text-[10px] text-slate-500 block truncate">
                     {artist.last_harvested_at
                       ? `최근 수집: ${new Date(artist.last_harvested_at).toLocaleDateString()}`
@@ -124,6 +133,16 @@ export default function TargetArtistPanel({
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenArtistDetail(artist)}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-[10px] font-semibold transition shadow-sm"
+                    title={`'${artist.name}' 밴드 상세 정보 보기 및 수정`}
+                  >
+                    <Info className="w-3 h-3 text-indigo-400" />
+                    <span>정보</span>
+                  </button>
+
                   <button
                     type="button"
                     disabled={isAnalyzing}

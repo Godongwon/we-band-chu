@@ -3,9 +3,12 @@ export interface TargetArtist {
   id: string;
   name: string;
   search_alias: string | null;
+  vocal_gender?: 'FEMALE' | 'MALE' | 'COED' | string | null;
+  has_keys?: boolean | null;
   priority: number;
   is_active: boolean;
   last_harvested_at: string | null;
+  created_at?: string | null;
 }
 
 export interface SongItem {
@@ -55,4 +58,3 @@ export interface HarvestStats {
     time: string;
   } | null;
 }
-
