@@ -71,7 +71,7 @@ export default function RepertoirePanel({
       : sortRepertoireSongs(repertoire.filter((s) => (s.status || 'WISHLIST') === statusFilter));
 
   return (
-    <div className="bg-[#0b0e1e]/60 border border-slate-800/60 rounded-2xl p-5 space-y-4">
+    <div className="bg-[#0b0e1e]/60 border border-slate-800/60 rounded-2xl p-3.5 sm:p-5 space-y-3.5 sm:space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h2 className="text-sm font-bold flex items-center gap-2 text-slate-200">
           <Music className="w-4 h-4 text-indigo-400" />

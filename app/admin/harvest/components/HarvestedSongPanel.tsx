@@ -224,39 +224,41 @@ export default function HarvestedSongPanel({
         </div>
 
         {isSongPanelOpen && (
-          <div className="flex items-center justify-between sm:justify-end gap-2 flex-wrap">
-            {selectedSongIds.size > 0 && (
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between sm:justify-end gap-2 w-full sm:w-auto pt-1 sm:pt-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              {selectedSongIds.size > 0 && (
+                <button
+                  type="button"
+                  disabled={isDeletingSelected}
+                  onClick={onDeleteSelectedSongs}
+                  className="text-xs flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold transition shadow disabled:opacity-50 shrink-0"
+                >
+                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {isDeletingSelected ? '삭제 중...' : `선택 삭제 (${selectedSongIds.size}곡)`}
+                  </span>
+                </button>
+              )}
+
               <button
                 type="button"
-                disabled={isDeletingSelected}
-                onClick={onDeleteSelectedSongs}
-                className="text-xs flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold transition shadow disabled:opacity-50"
+                onClick={onToggleSelectAll}
+                className="text-xs flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-semibold transition shrink-0"
               >
-                <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                {isAllSelected ? (
+                  <CheckSquare className="w-3.5 h-3.5 text-indigo-400" />
+                ) : (
+                  <Square className="w-3.5 h-3.5 text-slate-500" />
+                )}
                 <span>
-                  {isDeletingSelected ? '삭제 중...' : `선택 삭제 (${selectedSongIds.size}곡)`}
+                  {isAllSelected
+                    ? `전체 해제 (${filteredSongs.length})`
+                    : `전체 선택 (${filteredSongs.length})`}
                 </span>
               </button>
-            )}
+            </div>
 
-            <button
-              type="button"
-              onClick={onToggleSelectAll}
-              className="text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-semibold transition"
-            >
-              {isAllSelected ? (
-                <CheckSquare className="w-3.5 h-3.5 text-indigo-400" />
-              ) : (
-                <Square className="w-3.5 h-3.5 text-slate-500" />
-              )}
-              <span>
-                {isAllSelected
-                  ? `전체 해제 (${filteredSongs.length})`
-                  : `전체 선택 (${filteredSongs.length})`}
-              </span>
-            </button>
-
-            <div className="relative flex-1 sm:w-56">
+            <div className="relative w-full sm:w-56">
               <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -279,93 +281,117 @@ export default function HarvestedSongPanel({
         )}
       </div>
 
-      {/* 장르별 필터링 바 (스크롤바 제거 + 좌우 화살표 버튼 탐색 + 고정 드롭다운) */}
+      {/* 장르별 필터링 바 (모바일 대응: 모바일에서는 라벨/드롭다운 1열 + 가로 칩 스크롤 2열로 분리하여 칩 공간 100% 확보) */}
       {isSongPanelOpen && (
-        <div className="flex items-center gap-1.5 border-b border-slate-800/50 pb-2 pt-0.5 text-xs">
-          {/* 좌측 고정 라벨 */}
-          <div className="flex items-center gap-1 pl-0.5 shrink-0">
-            <Filter className="w-3.5 h-3.5 text-purple-400" />
-            <span className="text-[11px] font-bold text-slate-400 whitespace-nowrap">장르 필터:</span>
-          </div>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 border-b border-slate-800/50 pb-2.5 pt-0.5 text-xs">
+          {/* 좌측 영역: 장르 필터 라벨 & (모바일일 때 드롭다운) */}
+          <div className="flex items-center justify-between sm:justify-start gap-2 shrink-0">
+            <div className="flex items-center gap-1 pl-0.5">
+              <Filter className="w-3.5 h-3.5 text-purple-400" />
+              <span className="text-[11px] font-bold text-slate-400 whitespace-nowrap">장르 필터:</span>
+            </div>
 
-          {/* 좌측 스크롤 화살표 버튼 */}
-          <button
-            type="button"
-            onClick={() => handleScrollGenres('left')}
-            title="이전 장르 보기"
-            className="shrink-0 p-1 rounded-lg bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-purple-300 transition shadow-sm"
-          >
-            <ChevronLeft className="w-3.5 h-3.5" />
-          </button>
-
-          {/* 중앙 장르 칩 컨테이너 (스크롤바 완전 숨김) */}
-          <div
-            ref={genreScrollRef}
-            className="flex items-center gap-1.5 overflow-x-auto scroll-smooth min-w-0 flex-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden py-0.5"
-          >
-            {/* 전체 버튼 */}
-            <button
-              type="button"
-              onClick={() => onSelectGenre('ALL')}
-              className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold transition shrink-0 ${
-                selectedGenre === 'ALL'
-                  ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
-                  : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-              }`}
-            >
-              전체 ({availableGenres.reduce((acc, cur) => acc + cur[1], 0)})
-            </button>
-
-            {/* 주요 장르 칩들 */}
-            {topGenres.map(([genre, count]) => {
-              const isSelected = selectedGenre === genre;
-              return (
-                <button
-                  key={genre}
-                  type="button"
-                  onClick={() => onSelectGenre(genre)}
-                  className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold transition shrink-0 flex items-center gap-1 ${
-                    isSelected
-                      ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
-                      : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                  }`}
+            {/* 모바일 화면 전용 전체 장르 드롭다운 */}
+            {availableGenres.length > 0 && (
+              <div className="relative inline-flex items-center sm:hidden shrink-0">
+                <select
+                  value={selectedGenre}
+                  onChange={(e) => onSelectGenre(e.target.value)}
+                  className="appearance-none bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 text-[11px] font-medium rounded-xl pl-2.5 pr-7 py-1 outline-none cursor-pointer focus:border-purple-500 transition max-w-[140px] truncate"
                 >
-                  <span>{genre}</span>
-                  <span className={`text-[10px] ${isSelected ? 'text-purple-200' : 'text-slate-500'}`}>
-                    ({count})
-                  </span>
-                </button>
-              );
-            })}
-
-            {/* 선택된 장르가 상위 목록 외일 경우 활성 칩 표시 */}
-            {isOtherSelected && (
-              <button
-                type="button"
-                onClick={() => onSelectGenre(selectedGenre)}
-                className="px-2.5 py-1 rounded-full border text-[11px] font-semibold bg-purple-600 text-white border-purple-500 shadow-sm shrink-0 flex items-center gap-1"
-              >
-                <span>{selectedGenre}</span>
-                <span className="text-[10px] text-purple-200">
-                  ({availableGenres.find(([g]) => g === selectedGenre)?.[1] || 0})
-                </span>
-              </button>
+                  <option value="ALL">전체 ({availableGenres.length}개) ▾</option>
+                  {availableGenres.map(([g, count]) => (
+                    <option key={g} value={g}>
+                      {g} ({count}곡)
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3 h-3 absolute right-2 pointer-events-none text-slate-500" />
+              </div>
             )}
           </div>
 
-          {/* 우측 스크롤 화살표 버튼 */}
-          <button
-            type="button"
-            onClick={() => handleScrollGenres('right')}
-            title="다음 장르 보기"
-            className="shrink-0 p-1 rounded-lg bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-purple-300 transition shadow-sm"
-          >
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
+          {/* 중앙 장르 칩 영역 (모바일에서는 전체 너비를 활용하여 칩들이 잘리지 않고 시원하게 표시됨) */}
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            {/* 좌측 스크롤 화살표 버튼 */}
+            <button
+              type="button"
+              onClick={() => handleScrollGenres('left')}
+              title="이전 장르 보기"
+              className="shrink-0 p-1.5 rounded-lg bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-purple-300 transition shadow-sm"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
 
-          {/* 우측 고정 전체 장르 드롭다운 선택기 */}
+            {/* 중앙 장르 칩 컨테이너 (스크롤바 완전 숨김) */}
+            <div
+              ref={genreScrollRef}
+              className="flex items-center gap-1.5 overflow-x-auto scroll-smooth min-w-0 flex-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden py-0.5"
+            >
+              {/* 전체 버튼 */}
+              <button
+                type="button"
+                onClick={() => onSelectGenre('ALL')}
+                className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold transition shrink-0 ${
+                  selectedGenre === 'ALL'
+                    ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
+                    : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                전체 ({availableGenres.reduce((acc, cur) => acc + cur[1], 0)})
+              </button>
+
+              {/* 주요 장르 칩들 */}
+              {topGenres.map(([genre, count]) => {
+                const isSelected = selectedGenre === genre;
+                return (
+                  <button
+                    key={genre}
+                    type="button"
+                    onClick={() => onSelectGenre(genre)}
+                    className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold transition shrink-0 flex items-center gap-1 ${
+                      isSelected
+                        ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
+                        : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>{genre}</span>
+                    <span className={`text-[10px] ${isSelected ? 'text-purple-200' : 'text-slate-500'}`}>
+                      ({count})
+                    </span>
+                  </button>
+                );
+              })}
+
+              {/* 선택된 장르가 상위 목록 외일 경우 활성 칩 표시 */}
+              {isOtherSelected && (
+                <button
+                  type="button"
+                  onClick={() => onSelectGenre(selectedGenre)}
+                  className="px-2.5 py-1 rounded-full border text-[11px] font-semibold bg-purple-600 text-white border-purple-500 shadow-sm shrink-0 flex items-center gap-1"
+                >
+                  <span>{selectedGenre}</span>
+                  <span className="text-[10px] text-purple-200">
+                    ({availableGenres.find(([g]) => g === selectedGenre)?.[1] || 0})
+                  </span>
+                </button>
+              )}
+            </div>
+
+            {/* 우측 스크롤 화살표 버튼 */}
+            <button
+              type="button"
+              onClick={() => handleScrollGenres('right')}
+              title="다음 장르 보기"
+              className="shrink-0 p-1.5 rounded-lg bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-purple-300 transition shadow-sm"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* 데스크탑(PC) 전용 전체 장르 드롭다운 선택기 */}
           {availableGenres.length > 0 && (
-            <div className="relative inline-flex items-center shrink-0">
+            <div className="relative hidden sm:inline-flex items-center shrink-0">
               <select
                 value={selectedGenre}
                 onChange={(e) => onSelectGenre(e.target.value)}
@@ -468,12 +494,12 @@ export default function HarvestedSongPanel({
                     </div>
                   </div>
 
-                  {/* 하단(모바일) / 우측(PC): 미리듣기 버튼(노란색 영역) + BPM/Key + YouTube / 삭제 */}
+                  {/* 하단(모바일) / 우측(PC): 미리듣기 버튼 + BPM/Key + YouTube / 삭제 */}
                   <div
-                    className="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-2 sm:pt-0 border-t border-slate-800/50 sm:border-0 pl-6 sm:pl-0"
+                    className="flex flex-wrap items-center justify-between sm:justify-end gap-1.5 sm:gap-2 shrink-0 pt-2 sm:pt-0 border-t border-slate-800/50 sm:border-0 w-full sm:w-auto"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {/* 30초 음악 미리듣기 버튼 (요청하신 노란색 표시 영역) */}
+                    {/* 30초 음악 미리듣기 버튼 */}
                     <button
                       type="button"
                       disabled={isLoadingAudio}
@@ -483,7 +509,7 @@ export default function HarvestedSongPanel({
                           ? '미리듣기 정지'
                           : `'${song.title}' 30초 음원 미리듣기 재생`
                       }
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition shadow-sm whitespace-nowrap ${
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition shadow-sm whitespace-nowrap shrink-0 ${
                         isPlaying
                           ? 'bg-emerald-500 text-slate-950 border-emerald-400 animate-pulse'
                           : 'bg-indigo-950/80 hover:bg-indigo-900 border-indigo-700/80 text-indigo-300 hover:text-white'
@@ -508,9 +534,9 @@ export default function HarvestedSongPanel({
                       )}
                     </button>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1 shrink-0">
                       <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap ${
+                        className={`px-1.5 sm:px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap ${
                           song.bpm
                             ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
                             : 'bg-slate-900 text-slate-500 border-slate-800'
@@ -520,7 +546,7 @@ export default function HarvestedSongPanel({
                       </span>
 
                       <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap ${
+                        className={`px-1.5 sm:px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap ${
                           song.original_key
                             ? 'bg-purple-950/80 text-purple-300 border-purple-800'
                             : 'bg-slate-900 text-slate-500 border-slate-800'
@@ -530,13 +556,13 @@ export default function HarvestedSongPanel({
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1 shrink-0 ml-auto sm:ml-0">
                       <a
                         href={youtubeTargetUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         title={`YouTube에서 '${song.artist} ${song.title}' 듣기/확인`}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-800/80 text-rose-300 hover:text-rose-100 text-[11px] font-semibold transition shadow-sm whitespace-nowrap"
+                        className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-800/80 text-rose-300 hover:text-rose-100 text-[11px] font-semibold transition shadow-sm whitespace-nowrap"
                       >
                         <Play className="w-3 h-3 fill-rose-300 text-rose-300" />
                         <span>YouTube</span>
@@ -547,7 +573,7 @@ export default function HarvestedSongPanel({
                         type="button"
                         onClick={(e) => onDeleteSong(e, song)}
                         title={`'${song.title}' 곡 삭제`}
-                        className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition"
+                        className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition shrink-0"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>

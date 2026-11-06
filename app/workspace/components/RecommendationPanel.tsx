@@ -130,7 +130,7 @@ export default function RecommendationPanel({
   };
 
   return (
-    <div className="bg-[#0b0e1e]/60 border border-slate-800/60 rounded-2xl p-5 space-y-4">
+    <div className="bg-[#0b0e1e]/60 border border-slate-800/60 rounded-2xl p-3.5 sm:p-5 space-y-3.5 sm:space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-bold flex items-center gap-2 text-slate-200">
           {isSearchActive ? (
@@ -235,15 +235,15 @@ export default function RecommendationPanel({
               <div
                 key={song.id || idx}
                 onClick={() => onSelectSong(song)}
-                className={`p-3.5 border rounded-2xl flex items-center justify-between gap-3 text-xs transition shadow-sm cursor-pointer group ${
+                className={`p-3 sm:p-3.5 border rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 text-xs transition shadow-sm cursor-pointer group ${
                   isPlaying
                     ? 'bg-indigo-950/70 border-indigo-500'
                     : 'bg-[#0d1021]/80 hover:bg-[#111429] border-slate-800/80 hover:border-slate-700/80'
                 }`}
               >
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-slate-100 text-sm truncate group-hover:text-indigo-300 transition">
+                <div className="min-w-0 flex-1 space-y-1 sm:space-y-1.5">
+                  <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                    <span className="font-bold text-slate-100 text-[13px] sm:text-sm break-keep group-hover:text-indigo-300 transition">
                       {song.title}
                     </span>
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-800/60">
@@ -257,7 +257,7 @@ export default function RecommendationPanel({
                   </div>
 
                   <div className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap">
-                    <span>{song.artist}</span>
+                    <span className="font-medium text-slate-300">{song.artist}</span>
                     <span>•</span>
                     <span>
                       {song.original_key &&
@@ -273,13 +273,13 @@ export default function RecommendationPanel({
                     <span>{song.bpm}bpm</span>
                   </div>
 
-                  <div className="flex items-center gap-3 pt-1 text-[11px]">
+                  <div className="flex items-center gap-3 pt-0.5 text-[11px]">
                     <a
                       href={getYouTubeCoverUrl(song.artist, song.title)}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
-                      className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
+                      className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline whitespace-nowrap shrink-0"
                     >
                       🎯 커버 영상
                     </a>
@@ -288,14 +288,17 @@ export default function RecommendationPanel({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
-                      className="text-slate-400 hover:text-slate-200 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
+                      className="text-slate-400 hover:text-slate-200 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline whitespace-nowrap shrink-0"
                     >
                       📺 라이브 무대
                     </a>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                <div
+                  className="flex items-center justify-end gap-1.5 sm:gap-2 shrink-0 pt-2 sm:pt-0 border-t border-slate-800/50 sm:border-0"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   {/* 30초 음악 미리듣기 버튼 */}
                   <button
                     type="button"
@@ -334,7 +337,7 @@ export default function RecommendationPanel({
                   <button
                     type="button"
                     onClick={() => onAddToRepertoire(song)}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition shadow"
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition shadow whitespace-nowrap"
                   >
                     <Plus className="w-3.5 h-3.5" /> 담기
                   </button>
@@ -343,7 +346,7 @@ export default function RecommendationPanel({
                     type="button"
                     onClick={() => onReportSong(song)}
                     title="곡/음원 정보 신고"
-                    className="p-1.5 rounded-xl border border-rose-900/60 bg-rose-950/40 text-rose-400 hover:bg-rose-900/60 transition"
+                    className="p-1.5 rounded-xl border border-rose-900/60 bg-rose-950/40 text-rose-400 hover:bg-rose-900/60 transition shrink-0"
                   >
                     <AlertCircle className="w-4 h-4" />
                   </button>
