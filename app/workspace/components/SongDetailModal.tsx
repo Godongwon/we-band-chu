@@ -1,12 +1,14 @@
 'use client';
 
 import React from 'react';
-import { X, Sliders, Guitar, ExternalLink, Music, Sparkles, Play, AlertCircle, Plus } from 'lucide-react';
+import { X, Sliders, Guitar, ExternalLink, Music, Sparkles, Play, AlertCircle, Plus, Check } from 'lucide-react';
 import { SongItem, BandProfile } from '../types';
+import { REPERTOIRE_STATUS_OPTIONS } from './RepertoirePanel';
 
 interface SongDetailModalProps {
   selectedSong: SongItem | null;
   bandProfile: BandProfile;
+  repertoire?: SongItem[];
   onClose: () => void;
   onReportSong: (song: SongItem) => void;
   onAddToRepertoire: (song: SongItem) => void;
@@ -15,11 +17,26 @@ interface SongDetailModalProps {
 export default function SongDetailModal({
   selectedSong,
   bandProfile,
+  repertoire = [],
   onClose,
   onReportSong,
   onAddToRepertoire,
 }: SongDetailModalProps) {
   if (!selectedSong) return null;
+
+  const matchedRep = repertoire.find(
+    (r) =>
+      (selectedSong.id && r.id === selectedSong.id) ||
+      (r.title &&
+        selectedSong.title &&
+        r.title.toLowerCase().trim() === selectedSong.title.toLowerCase().trim())
+  );
+
+  const repStatusObj = matchedRep
+    ? REPERTOIRE_STATUS_OPTIONS.find(
+        (opt) => opt.value === (matchedRep.status || 'WISHLIST')
+      ) || REPERTOIRE_STATUS_OPTIONS[0]
+    : null;
 
   return (
     <div
@@ -32,10 +49,17 @@ export default function SongDetailModal({
       >
         <div className="flex items-start justify-between border-b border-slate-800/80 pb-4">
           <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-800/70">
                 {selectedSong.genre || '밴드/록'}
               </span>
+              {repStatusObj && (
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${repStatusObj.badgeStyle}`}
+                >
+                  {repStatusObj.label}
+                </span>
+              )}
               <span className="text-slate-400 text-xs">{selectedSong.artist}</span>
             </div>
             <h3 className="text-lg font-black text-slate-100 flex items-center gap-2">
@@ -205,14 +229,21 @@ export default function SongDetailModal({
             >
               닫기
             </button>
-            <button
-              type="button"
-              onClick={() => onAddToRepertoire(selectedSong)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition shadow"
-            >
-              <Plus className="w-4 h-4" />
-              레퍼토리에 담기
-            </button>
+            {matchedRep ? (
+              <span className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-950/90 border border-emerald-700/80 text-emerald-300 font-bold shadow select-none">
+                <Check className="w-4 h-4 text-emerald-400 stroke-[2.5]" />
+                담김 ({repStatusObj?.label})
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onAddToRepertoire(selectedSong)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition shadow"
+              >
+                <Plus className="w-4 h-4" />
+                레퍼토리에 담기
+              </button>
+            )}
           </div>
         </div>
       </div>

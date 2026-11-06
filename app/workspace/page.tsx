@@ -510,6 +510,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
       <div className="max-w-7xl mx-auto space-y-4">
         <WorkspaceToolbar
           bandProfile={bandProfile}
+          repertoire={repertoire}
           searchQuery={searchQuery}
           searchResults={searchResults}
           isSearching={isSearching}
@@ -583,6 +584,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
       <SongDetailModal
         selectedSong={selectedSong}
         bandProfile={bandProfile}
+        repertoire={repertoire}
         onClose={() => setSelectedSong(null)}
         onReportSong={handleReportSong}
         onAddToRepertoire={handleAddToRepertoire}

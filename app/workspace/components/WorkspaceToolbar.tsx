@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   LogOut,
   Users,
@@ -11,11 +11,14 @@ import {
   RefreshCw,
   Plus,
   AlertCircle,
+  Check,
 } from 'lucide-react';
 import { BandProfile, SongItem } from '../types';
+import { REPERTOIRE_STATUS_OPTIONS } from './RepertoirePanel';
 
 interface WorkspaceToolbarProps {
   bandProfile: BandProfile;
+  repertoire?: SongItem[];
   searchQuery: string;
   searchResults?: SongItem[];
   isSearching?: boolean;
@@ -30,6 +33,7 @@ interface WorkspaceToolbarProps {
 
 export default function WorkspaceToolbar({
   bandProfile,
+  repertoire = [],
   searchQuery,
   searchResults = [],
   isSearching = false,
@@ -42,6 +46,17 @@ export default function WorkspaceToolbar({
   onOpenSuggest,
 }: WorkspaceToolbarProps) {
   const isSearchActive = searchQuery.trim().length > 0;
+
+  // 레퍼토리에 담긴 곡 빠른 조회 맵 (id 및 소문자 제목 기준)
+  const repertoireLookup = useMemo(() => {
+    const byId = new Map<string, SongItem>();
+    const byTitle = new Map<string, SongItem>();
+    for (const item of repertoire) {
+      if (item.id) byId.set(item.id, item);
+      if (item.title) byTitle.set(item.title.toLowerCase().trim(), item);
+    }
+    return { byId, byTitle };
+  }, [repertoire]);
 
   return (
     <>
@@ -172,92 +187,123 @@ export default function WorkspaceToolbar({
               </div>
             ) : (
               <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                {searchResults.map((song, idx) => (
-                  <div
-                    key={song.id || idx}
-                    onClick={() => onSelectSong && onSelectSong(song)}
-                    className="p-3 bg-[#0d1021]/90 hover:bg-[#131731] border border-slate-800/80 hover:border-indigo-700/70 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 text-xs transition shadow-sm cursor-pointer group"
-                  >
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-slate-100 text-[13px] sm:text-sm break-keep group-hover:text-indigo-300 transition">
-                          {song.title}
-                        </span>
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-800/60">
-                          {song.genre || '록/밴드'}
-                        </span>
-                      </div>
+                {searchResults.map((song, idx) => {
+                  const matchedRep =
+                    (song.id && repertoireLookup.byId.get(song.id)) ||
+                    repertoireLookup.byTitle.get((song.title || '').toLowerCase().trim());
 
-                      <div className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap">
-                        <span className="font-medium text-slate-300">{song.artist}</span>
-                        <span>•</span>
-                        <span>
-                          {song.original_key &&
-                          song.recommended_key &&
-                          song.recommended_key !== song.original_key &&
-                          song.recommended_key !== '원키 유지'
-                            ? `원키 ${song.original_key} → 추천 ${song.recommended_key}`
-                            : song.original_key
-                            ? `${song.original_key} Key`
-                            : song.recommended_key || '원키 유지'}
-                        </span>
-                        <span>•</span>
-                        <span>{song.bpm}bpm</span>
-                      </div>
+                  const repStatusObj = matchedRep
+                    ? REPERTOIRE_STATUS_OPTIONS.find(
+                        (opt) => opt.value === (matchedRep.status || 'WISHLIST')
+                      ) || REPERTOIRE_STATUS_OPTIONS[0]
+                    : null;
 
-                      <div className="flex items-center gap-3 pt-0.5 text-[11px]">
-                        <a
-                          href={`https://www.youtube.com/results?search_query=${encodeURIComponent(
-                            `${song.artist} ${song.title} 커버`
-                          )}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
-                        >
-                          🎯 커버 영상
-                        </a>
-                        <a
-                          href={`https://www.youtube.com/results?search_query=${encodeURIComponent(
-                            `${song.artist} ${song.title} 라이브`
-                          )}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-slate-400 hover:text-slate-200 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
-                        >
-                          📺 라이브 무대
-                        </a>
-                      </div>
-                    </div>
-
+                  return (
                     <div
-                      className="flex items-center justify-end gap-1.5 shrink-0 pt-1.5 sm:pt-0 border-t border-slate-800/50 sm:border-0"
-                      onClick={(e) => e.stopPropagation()}
+                      key={song.id || idx}
+                      onClick={() => onSelectSong && onSelectSong(matchedRep || song)}
+                      className={`p-3 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 text-xs transition shadow-sm cursor-pointer group border ${
+                        matchedRep
+                          ? 'bg-emerald-950/15 hover:bg-emerald-950/25 border-emerald-800/50 hover:border-emerald-700/80'
+                          : 'bg-[#0d1021]/90 hover:bg-[#131731] border-slate-800/80 hover:border-indigo-700/70'
+                      }`}
                     >
-                      {onAddToRepertoire && (
-                        <button
-                          type="button"
-                          onClick={() => onAddToRepertoire(song)}
-                          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition shadow"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> 담기
-                        </button>
-                      )}
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-slate-100 text-[13px] sm:text-sm break-keep group-hover:text-indigo-300 transition">
+                            {song.title}
+                          </span>
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-800/60">
+                            {song.genre || '록/밴드'}
+                          </span>
+                          {/* 레퍼토리에 담긴 곡이면 현재 상태 배지(후보/연습중/합주중/합주완료/공연완료/영상완료) 표시 */}
+                          {repStatusObj && (
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${repStatusObj.badgeStyle}`}
+                            >
+                              {repStatusObj.label}
+                            </span>
+                          )}
+                        </div>
 
-                      {onReportSong && (
-                        <button
-                          type="button"
-                          onClick={() => onReportSong(song)}
-                          title="곡/음원 정보 신고"
-                          className="p-1.5 rounded-xl border border-rose-900/60 bg-rose-950/40 text-rose-400 hover:bg-rose-900/60 transition"
-                        >
-                          <AlertCircle className="w-4 h-4" />
-                        </button>
-                      )}
+                        <div className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap">
+                          <span className="font-medium text-slate-300">{song.artist}</span>
+                          <span>•</span>
+                          <span>
+                            {song.original_key &&
+                            song.recommended_key &&
+                            song.recommended_key !== song.original_key &&
+                            song.recommended_key !== '원키 유지'
+                              ? `원키 ${song.original_key} → 추천 ${song.recommended_key}`
+                              : song.original_key
+                              ? `${song.original_key} Key`
+                              : song.recommended_key || '원키 유지'}
+                          </span>
+                          <span>•</span>
+                          <span>{song.bpm}bpm</span>
+                        </div>
+
+                        <div className="flex items-center gap-3 pt-0.5 text-[11px]">
+                          <a
+                            href={`https://www.youtube.com/results?search_query=${encodeURIComponent(
+                              `${song.artist} ${song.title} 커버`
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
+                          >
+                            🎯 커버 영상
+                          </a>
+                          <a
+                            href={`https://www.youtube.com/results?search_query=${encodeURIComponent(
+                              `${song.artist} ${song.title} 라이브`
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-slate-400 hover:text-slate-200 font-semibold flex items-center gap-0.5 transition cursor-pointer hover:underline"
+                          >
+                            📺 라이브 무대
+                          </a>
+                        </div>
+                      </div>
+
+                      <div
+                        className="flex items-center justify-end gap-1.5 shrink-0 pt-1.5 sm:pt-0 border-t border-slate-800/50 sm:border-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {matchedRep ? (
+                          <span className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-950/90 border border-emerald-700/80 text-emerald-300 font-bold text-xs shadow-sm select-none">
+                            <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[2.5]" />
+                            <span>담김</span>
+                          </span>
+                        ) : (
+                          onAddToRepertoire && (
+                            <button
+                              type="button"
+                              onClick={() => onAddToRepertoire(song)}
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition shadow"
+                            >
+                              <Plus className="w-3.5 h-3.5" /> 담기
+                            </button>
+                          )
+                        )}
+
+                        {onReportSong && (
+                          <button
+                            type="button"
+                            onClick={() => onReportSong(song)}
+                            title="곡/음원 정보 신고"
+                            className="p-1.5 rounded-xl border border-rose-900/60 bg-rose-950/40 text-rose-400 hover:bg-rose-900/60 transition"
+                          >
+                            <AlertCircle className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
