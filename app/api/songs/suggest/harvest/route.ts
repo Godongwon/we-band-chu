@@ -30,21 +30,34 @@ export async function POST(req: Request) {
         }
       }
 
+      // 사용자가 한글로 제보했으나 iTunes에서 영문 곡명만 반환한 경우, 한글 제보명 병기
+      const cleanUserTitle = String(title || '').trim();
+      if (cleanUserTitle && /[가-힣]/.test(cleanUserTitle) && !resolvedTitle.includes(cleanUserTitle)) {
+        resolvedTitle = `${cleanUserTitle} (${resolvedTitle})`;
+      }
+
+      // 아티스트명도 사용자가 한글로 제보했으나 iTunes가 영문(예: SOYEON)으로 반환한 경우, 사용자가 제보한 한글명 우선 채택
+      const cleanUserArtist = String(artist || '').trim();
+      let resolvedArtist = match?.artistName || artist;
+      if (cleanUserArtist && /[가-힣]/.test(cleanUserArtist) && !resolvedArtist.includes(cleanUserArtist)) {
+        resolvedArtist = cleanUserArtist;
+      }
+
       const previewUrl = match?.previewUrl || null;
       let analyzedBpm: number | null = null;
       let analyzedKey: string | null = null;
 
       if (previewUrl) {
-        const analysis = await analyzePreviewAudio(previewUrl, `${artist}-${resolvedTitle}`);
+        const analysis = await analyzePreviewAudio(previewUrl, `${resolvedArtist}-${resolvedTitle}`);
         analyzedBpm = analysis.bpm;
         analyzedKey = analysis.key;
       }
 
-      const youtubeUrl = user_youtube_url || `https://www.youtube.com/results?search_query=${encodeURIComponent(`${artist} ${resolvedTitle}`)}`;
+      const youtubeUrl = user_youtube_url || `https://www.youtube.com/results?search_query=${encodeURIComponent(`${resolvedArtist} ${resolvedTitle}`)}`;
 
       const previewSong = {
         title: resolvedTitle,
-        artist: match?.artistName || artist,
+        artist: resolvedArtist,
         genre: normalizeGenre(match?.primaryGenreName),
         preview_url: previewUrl,
         youtube_url: youtubeUrl,
@@ -55,7 +68,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, previewSong });
     }
 
- if (action === 'CONFIRM' && song_data) {
+    if (action === 'CONFIRM' && song_data) {
       // 1) target_artists 존재 여부 확인 및 없으면 LLM 자동 분석
       const { data: existingArtist } = await supabase
         .from('target_artists')
@@ -69,10 +82,17 @@ export async function POST(req: Request) {
         const classified = await classifyArtistWithLLM(song_data.artist);
         targetVocalGender = classified.vocal_gender;
 
+        const aliases = new Set<string>();
+        if (classified.search_alias) {
+          classified.search_alias.split(',').forEach((a: string) => aliases.add(a.trim()));
+        }
+        if (song_data.artist) aliases.add(song_data.artist.trim());
+        if (artist) aliases.add(String(artist).trim());
+
         await supabase.from('target_artists').insert([
           {
             name: song_data.artist,
-            search_alias: classified.search_alias,
+            search_alias: Array.from(aliases).filter(Boolean).join(', '),
             vocal_gender: classified.vocal_gender,
             priority: 2,
             is_active: true,
