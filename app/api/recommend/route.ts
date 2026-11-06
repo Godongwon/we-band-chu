@@ -278,6 +278,7 @@ export async function POST(req: Request) {
         recommended_key: recommendedKey,
         vocal_gender: songGender,
         youtube_url: song.youtube_url,
+        preview_url: song.preview_url,
         reason: reasons.slice(0, 2).join(' · '),
         score: score + randomJitter,
       };
