@@ -80,12 +80,15 @@ export async function POST(req: Request) {
         ]);
       }
 
-      // 💡 2) songs 테이블에 이미 동일 곡(artist + title)이 존재하는지 확인
+      const cleanArtist = String(song_data.artist || '').trim();
+      const cleanTitle = String(song_data.title || '').trim();
+
+      // 💡 2) songs 테이블에 이미 동일 곡(artist + title)이 존재하는지 확인 (대소문자/공백 무시 ilike)
       const { data: duplicateSong } = await supabase
         .from('songs')
         .select('id, title, artist')
-        .eq('artist', song_data.artist)
-        .eq('title', song_data.title)
+        .ilike('artist', cleanArtist)
+        .ilike('title', cleanTitle)
         .maybeSingle();
 
       if (duplicateSong) {
@@ -99,14 +102,14 @@ export async function POST(req: Request) {
 
         return NextResponse.json({
           success: true,
-          message: `'${song_data.title}'은(는) 이미 DB에 존재하는 곡입니다. 제보 상태를 수집 완료로 갱신했습니다.`,
+          message: `'${cleanTitle}'은(는) 이미 DB에 존재하는 곡입니다. 제보 상태를 '수집 완료'로 갱신했습니다.`,
         });
       }
 
       // 3) 중복이 없으면 정상 INSERT 진행
       const insertPayload: any = {
-        title: song_data.title,
-        artist: song_data.artist,
+        title: cleanTitle,
+        artist: cleanArtist,
         genre: normalizeGenre(song_data.genre),
         youtube_url: song_data.youtube_url || null,
         bpm: song_data.bpm || null,
@@ -124,7 +127,27 @@ export async function POST(req: Request) {
         const retry = await supabase.from('songs').insert([insertPayload]);
         songErr = retry.error;
       }
-      if (songErr) throw songErr;
+
+      // 💡 만약 DB의 UNIQUE 제약조건(songs_artist_title_key)에 의해 중복 감지된 경우: 실패가 아니라 정상 수집 완료로 흡수 처리
+      if (songErr) {
+        if (
+          songErr.code === '23505' ||
+          songErr.message?.includes('songs_artist_title_key') ||
+          songErr.message?.includes('duplicate key')
+        ) {
+          if (suggestion_id) {
+            await supabase
+              .from('song_suggestions')
+              .update({ status: 'HARVESTED' })
+              .eq('id', suggestion_id);
+          }
+          return NextResponse.json({
+            success: true,
+            message: `'${cleanTitle}'은(는) 이미 DB에 등록되어 있는 곡입니다. 제보 상태를 '수집 완료'로 갱신했습니다.`,
+          });
+        }
+        throw songErr;
+      }
 
       // 4) 제보 상태 갱신
       if (suggestion_id) {
@@ -142,6 +165,11 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: false, message: '잘못된 액션입니다.' }, { status: 400 });
   } catch (err: any) {
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+    console.error('[제보 음원 수집 처리 오류]:', err);
+    let errorMessage = err.message || '제보 곡 처리 중 오류가 발생했습니다.';
+    if (err.code === '23505' || err.message?.includes('songs_artist_title_key')) {
+      errorMessage = '이미 동일한 아티스트의 동일 곡명이 DB에 등록되어 있습니다.';
+    }
+    return NextResponse.json({ success: false, message: errorMessage }, { status: 500 });
   }
 }
