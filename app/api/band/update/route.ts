@@ -21,6 +21,26 @@ export async function POST(req: Request) {
       existingBand = data;
     }
 
+    // 2. 다른 밴드가 이미 해당 이름을 사용 중인지 중복 검사 (이름 변경 시도시)
+    if (existingBand && existingBand.name !== name) {
+      const { data: duplicateBand } = await supabase
+        .from('bands')
+        .select('id, name')
+        .eq('name', name)
+        .neq('id', existingBand.id)
+        .maybeSingle();
+
+      if (duplicateBand) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `'${name}'(은)는 이미 등록된 밴드명입니다. 기존 밴드로 접속하시려면 로그아웃 후 '${name}'(으)로 입장해 주세요.`,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     let savedBand = null;
     let error = null;
 
@@ -74,6 +94,10 @@ export async function POST(req: Request) {
     });
   } catch (err: any) {
     console.error('[밴드 구성 DB 저장 오류]:', err);
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+    let errorMessage = err.message || '밴드 저장 중 오류가 발생했습니다.';
+    if (err.code === '23505' || err.message?.includes('bands_name_unique')) {
+      errorMessage = '이미 동일한 이름의 밴드가 존재합니다. 다른 밴드명을 사용하시거나 기존 밴드로 로그인해 주세요.';
+    }
+    return NextResponse.json({ success: false, message: errorMessage }, { status: 500 });
   }
 }
