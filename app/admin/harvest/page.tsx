@@ -8,7 +8,10 @@ import {
   ReportedSong,
   SuggestionSong,
   HarvestStats,
+  ArtistFilterMode,
+  ArtistAuditIssueType,
 } from './types';
+import { auditTargetArtists } from '@/lib/artistAudit';
 import AdminAuthGate from './components/AdminAuthGate';
 import AdminActionToolbar from './components/AdminActionToolbar';
 import AdminStatsGrid, { AnalyzingSongInfo } from './components/AdminStatsGrid';
@@ -59,6 +62,14 @@ export default function HarvestAdminPage() {
 
   const [selectedArtist, setSelectedArtist] = useState<string>('ALL');
   const [searchSongQuery, setSearchSongQuery] = useState<string>('');
+  const [searchArtistQuery, setSearchArtistQuery] = useState<string>('');
+  const [artistFilterMode, setArtistFilterMode] = useState<ArtistFilterMode>('ALL');
+  const [selectedArtistIds, setSelectedArtistIds] = useState<Set<string>>(new Set());
+  const [isAuditingAI, setIsAuditingAI] = useState<boolean>(false);
+  const [isDeletingBulkArtists, setIsDeletingBulkArtists] = useState<boolean>(false);
+  const [aiAuditMap, setAiAuditMap] = useState<
+    Record<string, { types: ArtistAuditIssueType[]; reasons: string[] }>
+  >({});
   const [isBackfilling, setIsBackfilling] = useState<boolean>(false);
   const [currentAnalyzingSong, setCurrentAnalyzingSong] = useState<AnalyzingSongInfo | null>(null);
 
@@ -123,6 +134,10 @@ export default function HarvestAdminPage() {
       lastExecution,
     };
   }, [songs, artists]);
+
+  const auditMap = useMemo(() => {
+    return auditTargetArtists(artists, songs, aiAuditMap);
+  }, [artists, songs, aiAuditMap]);
 
   useEffect(() => {
     const savedAuth = sessionStorage.getItem('admin_authenticated');
@@ -1034,6 +1049,84 @@ export default function HarvestAdminPage() {
     }
   }
 
+  function toggleArtistSelection(artistId: string) {
+    setSelectedArtistIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(artistId)) next.delete(artistId);
+      else next.add(artistId);
+      return next;
+    });
+  }
+
+  function toggleSelectAllArtists(currentList: TargetArtist[]) {
+    if (currentList.length > 0 && currentList.every((a) => selectedArtistIds.has(a.id))) {
+      setSelectedArtistIds(new Set());
+    } else {
+      setSelectedArtistIds(new Set(currentList.map((a) => a.id)));
+    }
+  }
+
+  async function handleDeleteSelectedArtists() {
+    if (selectedArtistIds.size === 0) return;
+    const shouldDeleteSongs = confirm(
+      `선택한 ${selectedArtistIds.size}팀의 밴드를 수집 대상에서 삭제하시겠습니까?\n\n[확인]: 해당 밴드의 기존 수집곡도 함께 삭제\n[취소]: 삭제 작업 중단`
+    );
+    if (!shouldDeleteSongs) return;
+
+    setIsDeletingBulkArtists(true);
+    setLastMessage(`선택한 밴드 ${selectedArtistIds.size}팀 일괄 삭제 진행 중...`);
+
+    try {
+      const res = await fetch('/api/artists', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ids: Array.from(selectedArtistIds),
+          deleteSongs: true,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLastMessage(data.message);
+        setSelectedArtistIds(new Set());
+        await Promise.all([fetchArtists(), fetchSongs(true)]);
+      } else {
+        alert(`일괄 삭제 실패: ${data.message || '오류 발생'}`);
+      }
+    } catch (err: any) {
+      alert(`통신 오류: ${err.message}`);
+    } finally {
+      setIsDeletingBulkArtists(false);
+    }
+  }
+
+  async function handleRunAIAudit() {
+    setIsAuditingAI(true);
+    setLastMessage('AI(LLM) 기반 비밴드(힙합/아이돌/R&B) 및 별칭 오매칭 정밀 검사 진행 중...');
+
+    try {
+      const res = await fetch('/api/artists/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setAiAuditMap(data.aiAuditMap || {});
+        setArtistFilterMode('NEEDS_REVIEW');
+        setLastMessage(
+          `AI 정밀 검사 완료: 추가 ${data.flaggedCount || 0}팀의 이상 밴드가 감지되었습니다. '검사 필요' 필터로 확인하세요.`
+        );
+      } else {
+        alert(`AI 검사 실패: ${data.message || '오류 발생'}`);
+      }
+    } catch (err: any) {
+      alert(`AI 검사 통신 오류: ${err.message}`);
+    } finally {
+      setIsAuditingAI(false);
+    }
+  }
+
   async function handleAddTargetArtist(e: React.FormEvent) {
     e.preventDefault();
     if (!newArtistName.trim()) {
@@ -1073,18 +1166,21 @@ export default function HarvestAdminPage() {
 
   async function handleDeleteArtist(e: React.MouseEvent, artist: TargetArtist) {
     e.stopPropagation();
-    if (!confirm(`수집 대상 밴드 '${artist.name}'을(를) 삭제하시겠습니까?`)) return;
+    const shouldDeleteSongs = confirm(
+      `수집 대상 밴드 '${artist.name}'을(를) 삭제하시겠습니까?\n\n[확인]: 기존 수집된 곡도 함께 삭제\n[취소]: 삭제 취소`
+    );
+    if (!shouldDeleteSongs) return;
 
     try {
-      const res = await fetch(`/api/artists?id=${artist.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/artists?id=${artist.id}&deleteSongs=true`, { method: 'DELETE' });
       const data = await res.json();
 
       if (res.ok && data.success) {
-        setLastMessage(`'${artist.name}' 수집 대상에서 삭제 완료`);
+        setLastMessage(data.message || `'${artist.name}' 수집 대상에서 삭제 완료`);
         if (selectedArtist === artist.name) {
           setSelectedArtist('ALL');
         }
-        await fetchArtists();
+        await Promise.all([fetchArtists(), fetchSongs(true)]);
       } else {
         alert(`밴드 삭제 실패: ${data.message || data.error || `HTTP ${res.status}`}`);
       }
@@ -1256,13 +1352,25 @@ export default function HarvestAdminPage() {
         <div className="flex flex-col gap-6">
           <TargetArtistPanel
             artists={artists}
+            auditMap={auditMap}
             isArtistPanelOpen={isArtistPanelOpen}
             selectedArtist={selectedArtist}
+            searchArtistQuery={searchArtistQuery}
+            artistFilterMode={artistFilterMode}
+            selectedArtistIds={selectedArtistIds}
+            isAuditingAI={isAuditingAI}
+            isDeletingBulkArtists={isDeletingBulkArtists}
             refreshingId={refreshingId}
             isRefreshingAllLLM={isRefreshingAllLLM}
             refreshAllLLMProgress={refreshAllLLMProgress}
             updatingPriorityId={updatingPriorityId}
             onTogglePanel={setIsArtistPanelOpen}
+            onChangeSearchArtistQuery={setSearchArtistQuery}
+            onChangeArtistFilterMode={setArtistFilterMode}
+            onToggleArtistSelection={toggleArtistSelection}
+            onToggleSelectAllArtists={toggleSelectAllArtists}
+            onDeleteSelectedArtists={handleDeleteSelectedArtists}
+            onRunAIAudit={handleRunAIAudit}
             onOpenAddArtist={() => setIsAddArtistOpen(true)}
             onSelectArtist={setSelectedArtist}
             onOpenArtistDetail={(artist) => setDetailArtist(artist)}

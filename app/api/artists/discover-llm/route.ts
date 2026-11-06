@@ -210,27 +210,60 @@ export async function POST(req: Request) {
       for (const k of extractNormalizedKeys(a.search_alias || '')) existingSet.add(k);
     }
 
+    const BLOCKED_DISCOVER_KEYWORDS = [
+      '타이거jk',
+      'tigerjk',
+      '허클베리피',
+      '크루셜스타',
+      '크래비티',
+      'cravity',
+      'rescene',
+      '하이라이트',
+      '아이들',
+      'gidle',
+      '전소연',
+      '퍼퓸',
+      'perfume',
+      '보이즈투맨',
+      'boyziimen',
+      '위켄드',
+      'theweeknd',
+      '힙합',
+      '래퍼',
+      '댄스아이돌',
+    ];
+
     const filterNewCandidates = (list: DiscoveredArtistCandidate[]) => {
       const seen = new Set<string>();
       const filtered: DiscoveredArtistCandidate[] = [];
       for (const item of list) {
+        const rawName = String(item.name || '').trim();
+        const rawAlias = String(item.search_alias || item.name || '').trim();
+        const rawGenre = String(item.genre || 'Rock / Band').trim();
+
+        // 별칭에 한글이 포함되어 있거나 비어 있으면 제외
+        if (!rawName || !rawAlias || /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(rawAlias)) continue;
+
+        const normCombined = `${rawName}${rawAlias}${rawGenre}`.toLowerCase().replace(/\s+/g, '');
+        if (BLOCKED_DISCOVER_KEYWORDS.some((kw) => normCombined.includes(kw))) continue;
+
         const keys = [
-          ...extractNormalizedKeys(item.name || ''),
-          ...extractNormalizedKeys(item.search_alias || ''),
+          ...extractNormalizedKeys(rawName),
+          ...extractNormalizedKeys(rawAlias),
         ];
         if (keys.length === 0) continue;
         if (keys.some((k) => existingSet.has(k) || seen.has(k))) continue;
 
         for (const k of keys) seen.add(k);
         filtered.push({
-          name: String(item.name).trim(),
-          search_alias: String(item.search_alias || item.name).trim(),
+          name: rawName,
+          search_alias: rawAlias,
           vocal_gender: ['FEMALE', 'MALE', 'COED'].includes(
             String(item.vocal_gender).toUpperCase()
           )
             ? (String(item.vocal_gender).toUpperCase() as 'FEMALE' | 'MALE' | 'COED')
             : 'MALE',
-          genre: String(item.genre || 'Rock / Band').trim(),
+          genre: rawGenre,
           reason: String(item.reason || '합주 및 라이브 커버에 적합한 인기 밴드').trim(),
         });
       }
@@ -248,12 +281,14 @@ ${JSON.stringify(existingNames)}
 요청 카테고리/테마: "${category}"
 ${customPrompt ? `추가 검색 요청사항: "${customPrompt}"` : ''}
 
-위 목록에 **절대 포함되지 않은 새로운 밴드/아티스트 6팀**을 추천해 주세요.
-실제 합주실(보컬, 일렉기타, 베이스, 드럼, 키보드)에서 연주하기 좋은 곡들이 많고 iTunes/Apple Music에 정식 음원이 등록된 유명 또는 인기 인디/록/팝밴드여야 합니다.
+위 목록에 **절대 포함되지 않은 새로운 실제 밴드(록/모던록/인디록/팝펑크/J-Rock 밴드) 6팀**을 추천해 주세요.
+[절대 금지 사항]
+- 힙합/래퍼(예: 타이거 JK, 허클베리 피, 크루셜스타 등), 순수 K-Pop 댄스 아이돌(예: 크래비티, 아이들 등), R&B 보컬그룹(예: 보이즈 투 맨, 위켄드 등), 테크노/일렉트로닉 댄스 그룹은 **절대 추천하지 마세요**.
+- 반드시 실제 악기(일렉기타, 베이스, 드럼, 건반)로 연주하는 **실존 유명 밴드**만 추천하고, "name"과 "search_alias"가 반드시 **동일한 밴드의 공식 한국어 표기와 공식 영문 표기**로 일치해야 합니다.
 
 각 밴드마다 다음 필드를 포함한 JSON 배열을 반환하세요:
-1. "name": 한국에서 통용되는 밴드 이름 (한국 밴드는 한글명 우선, 해외/일본 밴드는 공식 영문명 또는 통용명. 예: "유다빈밴드", "엔플라잉", "설 (SURL)", "브로콜리너마저", "Mrs. GREEN APPLE", "Oasis")
-2. "search_alias": Apple Music / iTunes 영문 스토어에서 검색했을 때 가장 정확히 조회되는 **공식 영문(English/Romanized) 아티스트명** (절대 한글이나 일본어를 넣지 말고 영문 알파벳/숫자로만 작성. 예: "Yudabinband", "N.Flying", "SURL", "Broccoli, you too?", "Mrs. GREEN APPLE", "Oasis")
+1. "name": 한국에서 통용되는 밴드 이름 (예: "유다빈밴드", "엔플라잉", "설 (SURL)", "브로콜리너마저", "Mrs. GREEN APPLE", "Oasis")
+2. "search_alias": Apple Music / iTunes 영문 스토어에서 검색했을 때 가장 정확히 조회되는 **해당 밴드의 공식 영문(English/Romanized) 아티스트명** (절대 다른 아티스트 이름을 넣거나 한글을 넣지 마세요)
 3. "vocal_gender": 메인 보컬 성별 ("FEMALE" | "MALE" | "COED")
 4. "genre": 세부 장르 (예: "인디 록 / 모던 록", "J-Rock", "팝 펑크")
 5. "reason": 밴드 합주곡으로 추천하는 이유와 대표곡 1~2곡 소개 (한국어 1문장)

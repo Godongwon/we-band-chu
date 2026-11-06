@@ -102,16 +102,79 @@ export async function POST(req: Request) {
 export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id');
+    const singleId = searchParams.get('id');
+    const deleteSongsParam = searchParams.get('deleteSongs');
 
-    if (!id) {
-      return NextResponse.json({ success: false, message: 'ID가 필요합니다.' }, { status: 400 });
+    let ids: string[] = [];
+    let deleteSongs = deleteSongsParam === 'true';
+
+    try {
+      const body = await req.json();
+      if (Array.isArray(body?.ids)) {
+        ids = body.ids.filter(Boolean);
+      } else if (body?.id) {
+        ids = [String(body.id)];
+      }
+      if (body?.deleteSongs !== undefined) {
+        deleteSongs = Boolean(body.deleteSongs);
+      }
+    } catch {
+      // 쿼리스트링 요청인 경우 무시
     }
 
-    const { error } = await supabase.from('target_artists').delete().eq('id', id);
-    if (error) throw error;
+    if (singleId && !ids.includes(singleId)) {
+      ids.push(singleId);
+    }
 
-    return NextResponse.json({ success: true, message: '삭제 완료' });
+    if (ids.length === 0) {
+      return NextResponse.json({ success: false, message: '삭제할 밴드 ID가 필요합니다.' }, { status: 400 });
+    }
+
+    // 삭제 대상 밴드 이름 조회 (연관 수집곡 삭제용)
+    const { data: targetRows } = await supabase
+      .from('target_artists')
+      .select('id, name, search_alias')
+      .in('id', ids);
+
+    const artistNames = Array.from(
+      new Set(
+        (targetRows || [])
+          .flatMap((r) => [r.name?.trim(), r.search_alias?.trim()])
+          .filter(Boolean) as string[]
+      )
+    );
+
+    const chunkSize = 50;
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const { error } = await supabase.from('target_artists').delete().in('id', chunk);
+      if (error) throw error;
+    }
+
+    let deletedSongsCount = 0;
+    if (deleteSongs && artistNames.length > 0) {
+      const { data: matchedSongs } = await supabase
+        .from('songs')
+        .select('id')
+        .in('artist', artistNames);
+
+      const songIds = (matchedSongs || []).map((s) => s.id);
+      for (let i = 0; i < songIds.length; i += chunkSize) {
+        const chunk = songIds.slice(i, i + chunkSize);
+        await supabase.from('songs').delete().in('id', chunk);
+      }
+      deletedSongsCount = songIds.length;
+    }
+
+    return NextResponse.json({
+      success: true,
+      deletedArtistsCount: ids.length,
+      deletedSongsCount,
+      message:
+        deleteSongs && deletedSongsCount > 0
+          ? `수집 대상 밴드 ${ids.length}팀 및 연관 수집곡 ${deletedSongsCount}곡이 함께 삭제되었습니다.`
+          : `수집 대상 밴드 ${ids.length}팀이 삭제되었습니다.`,
+    });
   } catch (err: any) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }

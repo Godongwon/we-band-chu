@@ -1,4 +1,24 @@
 // app/admin/harvest/types.ts
+export type ArtistAuditIssueType = 'NON_BAND' | 'ALIAS_ERROR' | 'DUPLICATE' | 'ZERO_SONGS';
+
+export interface ArtistAuditResult {
+  artistId: string;
+  types: ArtistAuditIssueType[];
+  reasons: string[];
+  songCount: number;
+}
+
+export type ArtistFilterMode =
+  | 'ALL'
+  | 'NEEDS_REVIEW'
+  | 'NON_BAND'
+  | 'ALIAS_ERROR'
+  | 'DUPLICATE'
+  | 'ZERO_SONGS'
+  | 'PRIORITY_1'
+  | 'PRIORITY_2'
+  | 'PRIORITY_3';
+
 export interface TargetArtist {
   id: string;
   name: string;
