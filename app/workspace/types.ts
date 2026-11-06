@@ -7,6 +7,33 @@ export type RepertoireStatus =
   | 'PERFORMED'
   | 'VIDEO_COMPLETED';
 
+export const REPERTOIRE_STATUS_PRIORITY: Record<RepertoireStatus, number> = {
+  PRACTICING: 1, // 1순위: 연습중
+  ENSEMBLE: 2, // 2순위: 합주중
+  COMPLETED: 3, // 3순위: 합주완료
+  WISHLIST: 4, // 4순위: 후보
+  PERFORMED: 5, // 5순위: 공연완료
+  VIDEO_COMPLETED: 6, // 6순위: 영상완료
+};
+
+export function getRepertoireStatusOrder(status?: RepertoireStatus | string | null): number {
+  if (status && status in REPERTOIRE_STATUS_PRIORITY) {
+    return REPERTOIRE_STATUS_PRIORITY[status as RepertoireStatus];
+  }
+  return 4; // 기본값 후보(WISHLIST)
+}
+
+export function sortRepertoireSongs(list: SongItem[]): SongItem[] {
+  return [...list].sort((a, b) => {
+    const orderA = getRepertoireStatusOrder(a.status);
+    const orderB = getRepertoireStatusOrder(b.status);
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+    return (a.title || '').localeCompare(b.title || '', 'ko-KR');
+  });
+}
+
 export interface SongItem {
   id?: string;
   repertoire_id?: string;

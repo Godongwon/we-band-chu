@@ -2,7 +2,12 @@
 
 import React, { useState } from 'react';
 import { Music, ChevronDown, BookOpen, Trash2, Video } from 'lucide-react';
-import { SongItem, RepertoireStatus } from '../types';
+import {
+  SongItem,
+  RepertoireStatus,
+  sortRepertoireSongs,
+  getRepertoireStatusOrder,
+} from '../types';
 
 export interface StatusOption {
   value: RepertoireStatus;
@@ -11,11 +16,6 @@ export interface StatusOption {
 }
 
 export const REPERTOIRE_STATUS_OPTIONS: StatusOption[] = [
-  {
-    value: 'WISHLIST',
-    label: '후보',
-    badgeStyle: 'bg-amber-950/80 text-amber-300 border-amber-800 hover:bg-amber-900/80',
-  },
   {
     value: 'PRACTICING',
     label: '연습중',
@@ -30,6 +30,11 @@ export const REPERTOIRE_STATUS_OPTIONS: StatusOption[] = [
     value: 'COMPLETED',
     label: '합주완료',
     badgeStyle: 'bg-emerald-950/80 text-emerald-300 border-emerald-800 hover:bg-emerald-900/80',
+  },
+  {
+    value: 'WISHLIST',
+    label: '후보',
+    badgeStyle: 'bg-amber-950/80 text-amber-300 border-amber-800 hover:bg-amber-900/80',
   },
   {
     value: 'PERFORMED',
@@ -62,8 +67,8 @@ export default function RepertoirePanel({
 
   const filteredRepertoire =
     statusFilter === 'ALL'
-      ? repertoire
-      : repertoire.filter((s) => (s.status || 'WISHLIST') === statusFilter);
+      ? sortRepertoireSongs(repertoire)
+      : sortRepertoireSongs(repertoire.filter((s) => (s.status || 'WISHLIST') === statusFilter));
 
   return (
     <div className="bg-[#0b0e1e]/60 border border-slate-800/60 rounded-2xl p-5 space-y-4">
