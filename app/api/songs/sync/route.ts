@@ -1,6 +1,7 @@
 // app/api/songs/sync/route.ts
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
+import { searchITunesTracksForArtist, analyzePreviewAudio } from '@/lib/audioAnalyzer';
 
 export const maxDuration = 60;
 
@@ -21,51 +22,76 @@ export async function GET() {
     }
 
     const currentArtist = artists[0];
-    const searchTerm = currentArtist.search_alias || currentArtist.name;
     const vocalGender = currentArtist.vocal_gender || 'FEMALE';
 
-    // 2. iTunes API 호출
-    const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(searchTerm)}&country=KR&media=music&entity=song&limit=40`;
-    const res = await fetch(itunesUrl);
-    const itunesData = await res.json();
-    const tracks = itunesData.results || [];
+    // 2. iTunes API 다중 검색어(별칭 + 원어 + 글로벌/JP 스토어) 호출
+    const validTracks = await searchITunesTracksForArtist(
+      currentArtist.name,
+      currentArtist.search_alias
+    );
 
-    // 3. 블랙리스트 키워드 필터링
-    const BLACKLIST = ['inst', 'instrumental', 'mr', 'remix', 'ost', 'piano ver', 'acoustic ver'];
-    const validTracks = tracks.filter((t: any) => {
-      const titleLower = (t.trackName || '').toLowerCase();
-      return !BLACKLIST.some((b) => titleLower.includes(b)) && !!t.previewUrl;
-    });
-
-    // 4. 기존 곡 중복 검사
+    // 3. 기존 곡 중복 검사
     const { data: existingSongs } = await supabase
       .from('songs')
       .select('title')
       .eq('artist', currentArtist.name);
 
-    const existingTitleSet = new Set((existingSongs || []).map((s) => s.title.toLowerCase().trim()));
-    const newTracks = validTracks.filter((t: any) => !existingTitleSet.has((t.trackName || '').toLowerCase().trim()));
+    const existingTitleSet = new Set(
+      (existingSongs || []).map((s) => s.title.toLowerCase().trim())
+    );
+    const newTracks = validTracks.filter(
+      (t) => !existingTitleSet.has((t.trackName || '').toLowerCase().trim())
+    );
 
     let insertedCount = 0;
-    if (newTracks.length > 0) {
-      const insertRows = newTracks.slice(0, 20).map((t: any) => ({
-        title: t.trackName,
-        artist: currentArtist.name,
-        genre: t.primaryGenreName || 'Rock',
-        preview_url: t.previewUrl,
-        youtube_url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${currentArtist.name} ${t.trackName}`)}`,
-        vocal_gender: vocalGender, // 💡 아티스트의 보컬 성별 상속 저장
-        bpm: null,
-        original_key: null,
-      }));
+    const batchToInsert = newTracks.slice(0, 15);
 
-      const { error: insErr } = await supabase.from('songs').insert(insertRows);
-      if (insErr) throw insErr;
-      insertedCount = insertRows.length;
+    if (batchToInsert.length > 0) {
+      const insertRows = [];
+
+      for (const t of batchToInsert) {
+        // 수집 즉시 미리듣기 오디오에서 BPM & Key 실측 수행
+        const analyzed = await analyzePreviewAudio(
+          t.previewUrl,
+          `${currentArtist.name}-${t.trackName}`
+        );
+
+        insertRows.push({
+          title: t.trackName,
+          artist: currentArtist.name,
+          artist_id: currentArtist.id,
+          genre: t.primaryGenreName || 'Rock',
+          preview_url: t.previewUrl,
+          youtube_url: `https://www.youtube.com/results?search_query=${encodeURIComponent(
+            `${currentArtist.name} ${t.trackName}`
+          )}`,
+          vocal_gender: vocalGender,
+          bpm: analyzed.bpm,
+          original_key: analyzed.key,
+        });
+      }
+
+      const { error: insErr } = await supabase
+        .from('songs')
+        .upsert(insertRows, { onConflict: 'artist,title' });
+
+      if (insErr) {
+        // 복합 제약조건이 없거나 컬럼 차이가 있는 경우 개별 안전 삽입
+        for (const row of insertRows) {
+          const { error: singleErr } = await supabase.from('songs').insert([row]);
+          if (!singleErr) insertedCount++;
+        }
+      } else {
+        insertedCount = insertRows.length;
+      }
     }
 
-    // 5. 밴드 수집 상태 갱신 (더 이상 새 곡이 없으면 3순위로 강등)
-    const nextPriority = newTracks.length === 0 ? 3 : currentArtist.priority;
+    // 4. 밴드 수집 상태 갱신 (신규 곡을 모두 수집했거나 더 이상 남은 트랙이 없으면 3순위 이동)
+    const remainingTracksCount = Math.max(0, newTracks.length - batchToInsert.length);
+    const totalArtistSongs = (existingSongs?.length || 0) + insertedCount;
+    const nextPriority =
+      remainingTracksCount === 0 && totalArtistSongs > 0 ? 3 : currentArtist.priority === 1 && insertedCount === 0 ? 2 : currentArtist.priority;
+
     await supabase
       .from('target_artists')
       .update({

@@ -55,25 +55,112 @@ export function detectKeyFromChannel(channelData: Float32Array, sampleRate: numb
   return bestKey;
 }
 
-// iTunes 검색 API를 통한 30초 오디오 미리듣기 링크 조회
+// iTunes 검색 API를 통한 30초 오디오 미리듣기 링크 조회 (KR 스토어는 음원 다운로드 미지원으로 Global/US + JP 스토어 조회)
 export async function fetchPreviewUrl(title: string, artist: string): Promise<string | null> {
-  try {
-    const query = `${artist} ${title}`;
-    const krUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&country=KR&entity=song&limit=1`;
-    const krRes = await fetch(krUrl, { signal: AbortSignal.timeout(5000) });
-    if (krRes.ok) {
-      const krData = await krRes.json();
-      if (krData.results?.[0]?.previewUrl) return krData.results[0].previewUrl;
-    }
+  const query = `${artist} ${title}`;
+  const urls = [
+    `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=song&limit=3&lang=ko_kr`,
+    `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&country=JP&media=music&entity=song&limit=3`,
+  ];
 
-    const globalUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=1`;
-    const res = await fetch(globalUrl, { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.results?.[0]?.previewUrl || null;
-  } catch {
-    return null;
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const preview = data.results?.find((r: any) => r.previewUrl)?.previewUrl;
+      if (preview) return preview;
+    } catch {
+      // 다음 스토어 시도
+    }
   }
+  return null;
+}
+
+// 밴드명 및 검색 별칭 기반 iTunes 정식 음원 리스트 탐색
+export async function searchITunesTracksForArtist(
+  artistName: string,
+  searchAlias?: string | null
+): Promise<Array<{ trackName: string; artistName: string; primaryGenreName: string; previewUrl: string }>> {
+  const rawTerms = new Set<string>();
+  if (searchAlias?.trim()) {
+    rawTerms.add(searchAlias.trim());
+    // 괄호나 공백으로 병기된 별칭 분리 (예: "ヨルシカ 요루시카", "CHEEZE 치즈")
+    const parts = searchAlias
+      .replace(/[()]/g, ' ')
+      .split(/\s+/)
+      .map((p) => p.trim())
+      .filter((p) => p.length >= 2);
+    if (parts.length === 2 && /[^\u0000-\u007f]/.test(parts[0]) !== /[^\u0000-\u007f]/.test(parts[1])) {
+      parts.forEach((p) => rawTerms.add(p));
+    }
+  }
+  if (artistName?.trim()) {
+    rawTerms.add(artistName.trim());
+    const withoutParen = artistName.replace(/\(.*?\)/g, '').trim();
+    if (withoutParen) rawTerms.add(withoutParen);
+    const parenMatch = artistName.match(/\((.*?)\)/);
+    if (parenMatch?.[1]?.trim()) rawTerms.add(parenMatch[1].trim());
+  }
+
+  const BLACKLIST = ['inst', 'instrumental', 'mr', 'remix', 'ost', 'piano ver', 'acoustic ver', 'karaoke', '노래방'];
+  const collected: Array<{ trackName: string; artistName: string; primaryGenreName: string; previewUrl: string }> = [];
+  const seenTitles = new Set<string>();
+
+  const norm = (s: string) => s.toLowerCase().replace(/[\s\-_.()[\]]+/g, '');
+  const targetTokens = Array.from(rawTerms).map(norm).filter(Boolean);
+
+  for (const term of rawTerms) {
+    for (const countryParam of ['', '&country=JP']) {
+      try {
+        const url = `https://itunes.apple.com/search?term=${encodeURIComponent(
+          term
+        )}${countryParam}&media=music&entity=song&limit=50&lang=ko_kr`;
+
+        const res = await fetch(url, { signal: AbortSignal.timeout(6000), cache: 'no-store' });
+        if (!res.ok) continue;
+
+        const data = await res.json();
+        const results = data.results || [];
+        if (results.length === 0) continue;
+
+        for (const item of results) {
+          if (!item.trackName || !item.previewUrl) continue;
+
+          // 아티스트명 일치 여부 확인 (전혀 다른 가수의 동명 곡 유입 방지)
+          const itemArtistNorm = norm(item.artistName || '');
+          const isArtistMatch = targetTokens.some(
+            (tk) => itemArtistNorm.includes(tk) || tk.includes(itemArtistNorm)
+          );
+          if (!isArtistMatch && results.length > 5) continue;
+
+          const cleanTitle = String(item.trackName)
+            .replace(/\s*\((Inst|MR|Instrumental|Karaoke).*?\)/gi, '')
+            .trim();
+          const titleLower = cleanTitle.toLowerCase();
+
+          if (!cleanTitle || BLACKLIST.some((b) => titleLower.includes(b))) continue;
+          if (seenTitles.has(titleLower)) continue;
+
+          seenTitles.add(titleLower);
+          collected.push({
+            trackName: cleanTitle,
+            artistName: item.artistName || artistName,
+            primaryGenreName: item.primaryGenreName || 'Rock',
+            previewUrl: item.previewUrl,
+          });
+        }
+
+        if (collected.length >= 15) {
+          return collected;
+        }
+      } catch {
+        // 다음 검색어/스토어 시도
+      }
+    }
+  }
+
+  return collected;
 }
 
 // 오디오 버퍼 기반 실측 BPM & Key 분석
@@ -143,4 +230,3 @@ export async function analyzePreviewAudio(
   const deterministicKey = COMMON_KEYS[hash % COMMON_KEYS.length];
   return { bpm: deterministicBpm, key: deterministicKey };
 }
-

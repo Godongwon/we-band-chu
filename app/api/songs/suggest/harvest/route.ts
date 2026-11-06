@@ -11,7 +11,7 @@ export async function POST(req: Request) {
     const { suggestion_id, title, artist, user_youtube_url, action, song_data } = await req.json();
 
     if (action === 'FETCH') {
-      const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(`${artist} ${title}`)}&country=KR&media=music&entity=song&limit=5`;
+      const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(`${artist} ${title}`)}&media=music&entity=song&limit=5&lang=ko_kr`;
       const res = await fetch(itunesUrl);
       const itunesData = await res.json();
       const match = itunesData.results?.[0];

@@ -17,7 +17,8 @@ import SuggestionsModal from './components/SuggestionsModal';
 import ReportsModal from './components/ReportsModal';
 import AddArtistModal from './components/AddArtistModal';
 
-const REFRESH_INTERVAL_SECONDS = 300;
+const REFRESH_INTERVAL_SECONDS = 120; // 2분 주기 갱신 및 자동 수집
+const BACKFILL_INTERVAL_SECONDS = 60; // 1분 주기 BPM/Key 오디오 실측
 
 export default function HarvestAdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -127,9 +128,50 @@ export default function HarvestAdminPage() {
     }
   };
 
+  // 1분 주기 자동 오디오(BPM & Key) 실측 백필
+  const runSilentBackfill = async () => {
+    try {
+      const res = await fetch('/api/songs/backfill-audio', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success && data.updatedCount > 0) {
+        setLastMessage(
+          `[1분 주기 자동 실측] ${data.updatedCount}곡 BPM/Key 산출 완료 (남은 대상: ${data.remainingCount || 0}곡)`
+        );
+        await fetchSongs();
+      }
+    } catch (e) {
+      console.error('[자동 오디오 백필 오류]:', e);
+    }
+  };
+
+  // 2분 주기 자동 밴드 음원 수집(iTunes) + 데이터 갱신
+  const runAutoHarvestCycle = async () => {
+    setIsAutoRefreshing(true);
+    try {
+      const syncRes = await fetch('/api/songs/sync');
+      const syncData = await syncRes.json();
+      if (syncRes.ok && syncData.success && syncData.lastExecution) {
+        const { artist, count } = syncData.lastExecution;
+        if (count > 0) {
+          setLastMessage(`[2분 주기 자동 수집] ${artist} ${count}곡 수집 및 BPM/Key 실측 완료`);
+        }
+      }
+      await runSilentBackfill();
+      await Promise.all([fetchArtists(), fetchSongs(), fetchReports(), fetchSuggestions()]);
+    } catch (e) {
+      console.error('[2분 주기 자동 수집/갱신 오류]:', e);
+    } finally {
+      setIsAutoRefreshing(false);
+    }
+  };
+
   useEffect(() => {
     if (!isAuthenticated) return;
     refreshAllData();
+    const initBackfillTimer = setTimeout(() => {
+      runSilentBackfill();
+    }, 2000);
+    return () => clearTimeout(initBackfillTimer);
   }, [isAuthenticated]);
 
   useEffect(() => {
@@ -138,8 +180,12 @@ export default function HarvestAdminPage() {
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
-          refreshAllData();
+          runAutoHarvestCycle();
           return REFRESH_INTERVAL_SECONDS;
+        }
+        // 1분(60초) 경과 시점마다 BPM & Key 실측 백필 실행
+        if ((prev - 1) % BACKFILL_INTERVAL_SECONDS === 0) {
+          runSilentBackfill();
         }
         return prev - 1;
       });
