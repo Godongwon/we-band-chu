@@ -1,7 +1,21 @@
 'use client';
 
-import React from 'react';
-import { X, Sliders, Guitar, ExternalLink, Music, Sparkles, Play, AlertCircle, Plus, Check } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  X,
+  Sliders,
+  Guitar,
+  ExternalLink,
+  Music,
+  Sparkles,
+  Play,
+  Square as StopSquare,
+  Loader2,
+  Volume2,
+  AlertCircle,
+  Plus,
+  Check,
+} from 'lucide-react';
 import { SongItem, BandProfile, isSameSong } from '../types';
 import { REPERTOIRE_STATUS_OPTIONS } from './RepertoirePanel';
 
@@ -32,10 +46,111 @@ export default function SongDetailModal({
       ) || REPERTOIRE_STATUS_OPTIONS[0]
     : null;
 
+  // 30초 음악 미리듣기 재생 상태
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // 컴포넌트 언마운트 시 오디오 정지
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
+  // 곡이 변경되면 기존 오디오 정지 및 상태 리셋
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setIsPlaying(false);
+    setIsLoadingAudio(false);
+  }, [selectedSong?.id, selectedSong?.title]);
+
+  const handleClose = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setIsPlaying(false);
+    onClose();
+  };
+
+  const handleTogglePlay = async () => {
+    if (!selectedSong) return;
+
+    if (isPlaying) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      setIsPlaying(false);
+      return;
+    }
+
+    let streamUrl = selectedSong.preview_url;
+
+    if (!streamUrl) {
+      setIsLoadingAudio(true);
+      try {
+        const queryParams = new URLSearchParams();
+        if (selectedSong.id) queryParams.set('id', selectedSong.id);
+        if (selectedSong.title) queryParams.set('title', selectedSong.title);
+        if (selectedSong.artist) queryParams.set('artist', selectedSong.artist);
+
+        const res = await fetch(`/api/songs/preview?${queryParams.toString()}`);
+        const data = await res.json();
+        if (res.ok && data.preview_url) {
+          streamUrl = data.preview_url;
+          selectedSong.preview_url = streamUrl;
+        } else {
+          alert(`'${selectedSong.title}' 30초 미리듣기 음원을 찾지 못했습니다.`);
+          setIsLoadingAudio(false);
+          return;
+        }
+      } catch {
+        alert('음원 미리듣기 로드 중 통신 오류가 발생했습니다.');
+        setIsLoadingAudio(false);
+        return;
+      } finally {
+        setIsLoadingAudio(false);
+      }
+    }
+
+    if (!streamUrl) return;
+
+    try {
+      const audio = new Audio(streamUrl);
+      audioRef.current = audio;
+      setIsPlaying(true);
+
+      audio.onended = () => {
+        setIsPlaying(false);
+        audioRef.current = null;
+      };
+
+      audio.onerror = () => {
+        alert('오디오 재생 중 오류가 발생했습니다.');
+        setIsPlaying(false);
+        audioRef.current = null;
+      };
+
+      await audio.play();
+    } catch (err: any) {
+      console.error('[음원 미리듣기 재생 오류]:', err);
+      setIsPlaying(false);
+      audioRef.current = null;
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div
         className="bg-[#0e1227] border border-slate-800 rounded-3xl w-full max-w-xl p-6 shadow-2xl space-y-5 text-xs text-slate-200"
@@ -62,7 +177,7 @@ export default function SongDetailModal({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="text-slate-400 hover:text-slate-100 p-1 rounded-lg hover:bg-slate-800 transition"
           >
             <X className="w-5 h-5" />
@@ -177,9 +292,51 @@ export default function SongDetailModal({
           </div>
         </div>
 
-        <div className="p-3.5 bg-[#090c1d] border border-slate-800/80 rounded-2xl flex items-center justify-between gap-2">
-          <span className="text-[11px] text-slate-400">원곡 및 라이브 풀버전:</span>
+        <div className="p-3.5 bg-[#090c1d] border border-slate-800/80 rounded-2xl flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-400">원곡 및 라이브 풀버전:</span>
+            {isPlaying && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 animate-pulse">
+                <Volume2 className="w-3.5 h-3.5" /> 30초 미리듣기 재생 중
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {/* 30초 음악 미리듣기 버튼 */}
+            <button
+              type="button"
+              disabled={isLoadingAudio}
+              onClick={handleTogglePlay}
+              title={
+                isPlaying
+                  ? '미리듣기 정지'
+                  : `'${selectedSong.title}' 30초 음원 미리듣기 재생`
+              }
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold transition shadow-sm whitespace-nowrap ${
+                isPlaying
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 animate-pulse'
+                  : 'bg-indigo-950/90 hover:bg-indigo-900 border-indigo-700/80 text-indigo-300 hover:text-white'
+              } disabled:opacity-60`}
+            >
+              {isLoadingAudio ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-300" />
+                  <span>로딩...</span>
+                </>
+              ) : isPlaying ? (
+                <>
+                  <StopSquare className="w-3.5 h-3.5 fill-slate-950" />
+                  <span>정지</span>
+                  <Volume2 className="w-3.5 h-3.5 animate-bounce" />
+                </>
+              ) : (
+                <>
+                  <Play className="w-3.5 h-3.5 fill-indigo-400 text-indigo-400" />
+                  <span>30초 미리듣기</span>
+                </>
+              )}
+            </button>
+
             <a
               href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${selectedSong.artist} ${selectedSong.title} 라이브`)}`}
               target="_blank"
@@ -218,7 +375,7 @@ export default function SongDetailModal({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
             >
               닫기

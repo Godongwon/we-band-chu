@@ -16,6 +16,7 @@ import {
   ExternalLink,
   X,
   Pencil,
+  Filter,
 } from 'lucide-react';
 import { SongItem } from '../types';
 
@@ -24,12 +25,16 @@ interface HarvestedSongPanelProps {
   isSongPanelOpen: boolean;
   filteredSongs: SongItem[];
   selectedArtist: string;
+  selectedGenre: string;
+  availableGenres: [string, number][];
   selectedSongIds: Set<string>;
   isDeletingSelected: boolean;
   loading: boolean;
   searchSongQuery: string;
   onToggleSongPanel: () => void;
   onClearArtistFilter: () => void;
+  onSelectGenre: (genre: string) => void;
+  onClearGenreFilter: () => void;
   onDeleteSelectedSongs: () => void;
   onToggleSelectAll: () => void;
   onChangeSearchQuery: (val: string) => void;
@@ -43,12 +48,16 @@ export default function HarvestedSongPanel({
   isSongPanelOpen,
   filteredSongs,
   selectedArtist,
+  selectedGenre,
+  availableGenres,
   selectedSongIds,
   isDeletingSelected,
   loading,
   searchSongQuery,
   onToggleSongPanel,
   onClearArtistFilter,
+  onSelectGenre,
+  onClearGenreFilter,
   onDeleteSelectedSongs,
   onToggleSelectAll,
   onChangeSearchQuery,
@@ -57,6 +66,9 @@ export default function HarvestedSongPanel({
   onDeleteSong,
 }: HarvestedSongPanelProps) {
   const isAllSelected = filteredSongs.length > 0 && selectedSongIds.size === filteredSongs.length;
+  const topGenres = availableGenres.slice(0, 12);
+  const isOtherSelected =
+    selectedGenre !== 'ALL' && !topGenres.some(([g]) => g === selectedGenre);
 
   // 30초 음원 미리듣기 상태
   const [playingSongId, setPlayingSongId] = useState<string | null>(null);
@@ -157,6 +169,7 @@ export default function HarvestedSongPanel({
               <span>
                 수집된 음원 ({filteredSongs.length}곡)
                 {selectedArtist !== 'ALL' && ` - ${selectedArtist}`}
+                {selectedGenre !== 'ALL' && ` [${selectedGenre}]`}
               </span>
             </h2>
 
@@ -167,8 +180,20 @@ export default function HarvestedSongPanel({
                 title="밴드 필터 해제하고 전체 곡 보기"
                 className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-950/90 hover:bg-indigo-900 text-indigo-300 hover:text-white border border-indigo-700/80 text-[11px] font-bold transition shadow-sm"
               >
-                <span>필터 해제</span>
+                <span>밴드: {selectedArtist}</span>
                 <X className="w-3 h-3 text-indigo-400 hover:text-rose-300" />
+              </button>
+            )}
+
+            {selectedGenre !== 'ALL' && (
+              <button
+                type="button"
+                onClick={onClearGenreFilter}
+                title="장르 필터 해제하고 전체 곡 보기"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-950/90 hover:bg-purple-900 text-purple-300 hover:text-white border border-purple-700/80 text-[11px] font-bold transition shadow-sm"
+              >
+                <span>장르: {selectedGenre}</span>
+                <X className="w-3 h-3 text-purple-400 hover:text-rose-300" />
               </button>
             )}
 
@@ -243,6 +268,84 @@ export default function HarvestedSongPanel({
         )}
       </div>
 
+      {/* 장르별 필터링 바 (상위 주요 장르 칩 + 전체 장르 드롭다운 선택기) */}
+      {isSongPanelOpen && (
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 text-xs border-b border-slate-800/40">
+          <span className="text-[11px] font-bold text-slate-400 shrink-0 flex items-center gap-1 pl-0.5">
+            <Filter className="w-3.5 h-3.5 text-purple-400" />
+            <span>장르 필터:</span>
+          </span>
+
+          {/* 전체 버튼 */}
+          <button
+            type="button"
+            onClick={() => onSelectGenre('ALL')}
+            className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold transition shrink-0 ${
+              selectedGenre === 'ALL'
+                ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
+                : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+            }`}
+          >
+            전체 ({availableGenres.reduce((acc, cur) => acc + cur[1], 0)})
+          </button>
+
+          {/* 상위 주요 장르 칩 (상위 12개) */}
+          {topGenres.map(([genre, count]) => {
+            const isSelected = selectedGenre === genre;
+            return (
+              <button
+                key={genre}
+                type="button"
+                onClick={() => onSelectGenre(genre)}
+                className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold transition shrink-0 flex items-center gap-1 ${
+                  isSelected
+                    ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
+                    : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                <span>{genre}</span>
+                <span className={`text-[10px] ${isSelected ? 'text-purple-200' : 'text-slate-500'}`}>
+                  ({count})
+                </span>
+              </button>
+            );
+          })}
+
+          {/* 선택된 장르가 상위 12개 외의 장르일 경우 현재 선택 칩 표시 */}
+          {isOtherSelected && (
+            <button
+              type="button"
+              onClick={() => onSelectGenre(selectedGenre)}
+              className="px-2.5 py-1 rounded-full border text-[11px] font-semibold bg-purple-600 text-white border-purple-500 shadow-sm shrink-0 flex items-center gap-1"
+            >
+              <span>{selectedGenre}</span>
+              <span className="text-[10px] text-purple-200">
+                ({availableGenres.find(([g]) => g === selectedGenre)?.[1] || 0})
+              </span>
+            </button>
+          )}
+
+          {/* 전체 장르 드롭다운 선택기 */}
+          {availableGenres.length > 0 && (
+            <div className="relative inline-flex items-center shrink-0 ml-auto">
+              <select
+                value={selectedGenre}
+                onChange={(e) => onSelectGenre(e.target.value)}
+                className="appearance-none bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 text-[11px] font-medium rounded-xl pl-2.5 pr-7 py-1 outline-none cursor-pointer focus:border-purple-500 transition"
+              >
+                <option value="ALL">전체 장르 목록 ({availableGenres.length}개) ▾</option>
+                {availableGenres.map(([g, count]) => (
+                  <option key={g} value={g}>
+                    {g} ({count}곡)
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3 h-3 absolute right-2 pointer-events-none text-slate-500" />
+            </div>
+          )}
+        </div>
+      )}
+
       {isSongPanelOpen ? (
         loading ? (
           <div className="p-12 text-center text-slate-500 text-xs">음원 데이터 로드 중...</div>
@@ -310,7 +413,17 @@ export default function HarvestedSongPanel({
                       </div>
 
                       <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
-                        <span>{song.genre || '장르 미지정'}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectGenre(song.genre || '미분류');
+                          }}
+                          title={`'${song.genre || '미분류'}' 장르로 필터링`}
+                          className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-purple-950/40 border border-purple-800/40 text-purple-300 hover:bg-purple-900/60 hover:text-white transition cursor-pointer"
+                        >
+                          {song.genre || '장르 미지정'}
+                        </button>
                         <span>•</span>
                         <span>{new Date(song.created_at).toLocaleDateString()}</span>
                       </div>

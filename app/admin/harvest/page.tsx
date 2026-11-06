@@ -61,6 +61,7 @@ export default function HarvestAdminPage() {
   const [updatingPriorityId, setUpdatingPriorityId] = useState<string | null>(null);
 
   const [selectedArtist, setSelectedArtist] = useState<string>('ALL');
+  const [selectedGenre, setSelectedGenre] = useState<string>('ALL');
   const [searchSongQuery, setSearchSongQuery] = useState<string>('');
   const [searchArtistQuery, setSearchArtistQuery] = useState<string>('');
   const [artistFilterMode, setArtistFilterMode] = useState<ArtistFilterMode>('ALL');
@@ -1307,12 +1308,23 @@ export default function HarvestAdminPage() {
     );
   }
 
+  const availableGenres = useMemo(() => {
+    const map = new Map<string, number>();
+    songs.forEach((s) => {
+      if (selectedArtist !== 'ALL' && s.artist !== selectedArtist) return;
+      const g = s.genre?.trim() || '미분류';
+      map.set(g, (map.get(g) || 0) + 1);
+    });
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  }, [songs, selectedArtist]);
+
   const filteredSongs = songs.filter((s) => {
     const matchesArtist = selectedArtist === 'ALL' || s.artist === selectedArtist;
+    const matchesGenre = selectedGenre === 'ALL' || (s.genre || '미분류') === selectedGenre;
     const query = searchSongQuery.toLowerCase().trim();
     const matchesSearch =
       !query || s.title.toLowerCase().includes(query) || s.artist.toLowerCase().includes(query);
-    return matchesArtist && matchesSearch;
+    return matchesArtist && matchesGenre && matchesSearch;
   });
 
   return (
@@ -1404,12 +1416,16 @@ export default function HarvestAdminPage() {
             isSongPanelOpen={isSongPanelOpen}
             filteredSongs={filteredSongs}
             selectedArtist={selectedArtist}
+            selectedGenre={selectedGenre}
+            availableGenres={availableGenres}
             selectedSongIds={selectedSongIds}
             isDeletingSelected={isDeletingSelected}
             loading={loading}
             searchSongQuery={searchSongQuery}
             onToggleSongPanel={() => setIsSongPanelOpen((prev) => !prev)}
             onClearArtistFilter={() => setSelectedArtist('ALL')}
+            onSelectGenre={setSelectedGenre}
+            onClearGenreFilter={() => setSelectedGenre('ALL')}
             onDeleteSelectedSongs={handleDeleteSelectedSongs}
             onToggleSelectAll={() => toggleSelectAll(filteredSongs)}
             onChangeSearchQuery={setSearchSongQuery}

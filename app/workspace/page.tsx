@@ -137,6 +137,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
               original_key: r.songs.original_key || '원키 유지',
               recommended_key: r.played_key || r.songs.original_key || '원키 유지',
               youtube_url: r.songs.youtube_url,
+              preview_url: r.songs.preview_url,
             }));
 
           const dbKeySet = new Set(dbSongs.map((s) => (s.id ? `id:${s.id}` : getSongCompositeKey(s))));
@@ -271,6 +272,7 @@ export default function WorkspacePage({ currentBand }: { currentBand?: any }) {
             original_key: s.original_key || '원키 유지',
             recommended_key: s.original_key || '원키 유지',
             youtube_url: s.youtube_url,
+            preview_url: s.preview_url,
           }));
           setSearchResults(matched);
         }
