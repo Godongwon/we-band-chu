@@ -2,8 +2,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
-export const dynamic = 'force-dynamic';
-
 // 1. 대기 중인 신고 목록 조회 (연결된 YouTube URL 및 곡 정보 포함)
 export async function GET() {
   try {

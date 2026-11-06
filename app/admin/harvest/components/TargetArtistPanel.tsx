@@ -9,12 +9,15 @@ interface TargetArtistPanelProps {
   isArtistPanelOpen: boolean;
   selectedArtist: string;
   refreshingId: string | null;
+  isRefreshingAllLLM: boolean;
+  refreshAllLLMProgress: { current: number; total: number } | null;
   updatingPriorityId: string | null;
   onTogglePanel: (open: boolean) => void;
   onOpenAddArtist: () => void;
   onSelectArtist: (artistName: string) => void;
   onOpenArtistDetail: (artist: TargetArtist) => void;
   onRefreshWithLLM: (e: React.MouseEvent, artist: TargetArtist) => void;
+  onRefreshAllWithLLM: () => void;
   onUpdatePriority: (artistId: string, newPriority: number) => void;
   onDeleteArtist: (e: React.MouseEvent, artist: TargetArtist) => void;
 }
@@ -24,12 +27,15 @@ export default function TargetArtistPanel({
   isArtistPanelOpen,
   selectedArtist,
   refreshingId,
+  isRefreshingAllLLM,
+  refreshAllLLMProgress,
   updatingPriorityId,
   onTogglePanel,
   onOpenAddArtist,
   onSelectArtist,
   onOpenArtistDetail,
   onRefreshWithLLM,
+  onRefreshAllWithLLM,
   onUpdatePriority,
   onDeleteArtist,
 }: TargetArtistPanelProps) {
@@ -77,7 +83,22 @@ export default function TargetArtistPanel({
           </button>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            type="button"
+            disabled={isRefreshingAllLLM || artists.length === 0}
+            onClick={onRefreshAllWithLLM}
+            title="모든 수집 대상 밴드의 검색 키워드(search_alias) 및 보컬 성별을 LLM으로 일괄 분석"
+            className="text-[11px] flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 font-semibold transition shadow disabled:opacity-50"
+          >
+            <Sparkles className={`w-3 h-3 ${isRefreshingAllLLM ? 'animate-spin' : ''}`} />
+            <span>
+              {isRefreshingAllLLM && refreshAllLLMProgress
+                ? `전체 분석 중 (${refreshAllLLMProgress.current}/${refreshAllLLMProgress.total})`
+                : '전체 LLM 분석'}
+            </span>
+          </button>
+
           <button
             type="button"
             onClick={onOpenAddArtist}

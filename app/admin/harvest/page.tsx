@@ -47,6 +47,11 @@ export default function HarvestAdminPage() {
   const [lastMessage, setLastMessage] = useState<string>('');
 
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [isRefreshingAllLLM, setIsRefreshingAllLLM] = useState<boolean>(false);
+  const [refreshAllLLMProgress, setRefreshAllLLMProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
   const [updatingPriorityId, setUpdatingPriorityId] = useState<string | null>(null);
 
   const [selectedArtist, setSelectedArtist] = useState<string>('ALL');
@@ -469,6 +474,59 @@ export default function HarvestAdminPage() {
       alert(`통신 오류: ${err.message}`);
     } finally {
       setRefreshingId(null);
+    }
+  }
+
+  async function handleRefreshAllWithLLM() {
+    if (artists.length === 0) return;
+    if (
+      !confirm(
+        `전체 ${artists.length}개 밴드의 검색 키워드(search_alias)와 보컬 성별을 LLM으로 일괄 분석하시겠습니까?`
+      )
+    ) {
+      return;
+    }
+
+    setIsRefreshingAllLLM(true);
+    const sortedArtists = artists.slice().sort((a, b) => a.priority - b.priority);
+    const total = sortedArtists.length;
+    let successCount = 0;
+
+    try {
+      for (let i = 0; i < total; i++) {
+        const artist = sortedArtists[i];
+        setRefreshingId(artist.id);
+        setRefreshAllLLMProgress({ current: i + 1, total });
+        setLastMessage(
+          `[전체 LLM 분석 (${i + 1}/${total})] '${artist.name}' 검색 키워드 및 보컬 성별 분석 중...`
+        );
+
+        try {
+          const res = await fetch('/api/artists/refresh-llm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: artist.id, name: artist.name }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success && data.artist) {
+            successCount++;
+            setArtists((prev) =>
+              prev.map((a) => (a.id === artist.id ? { ...a, ...data.artist } : a))
+            );
+          }
+        } catch (err) {
+          console.error(`[전체 LLM 분석 실패 - ${artist.name}]:`, err);
+        }
+      }
+
+      setLastMessage(
+        `[전체 LLM 분석 완료] 총 ${total}개 밴드 중 ${successCount}개 밴드 정보 갱신 완료`
+      );
+      await fetchArtists();
+    } finally {
+      setRefreshingId(null);
+      setIsRefreshingAllLLM(false);
+      setRefreshAllLLMProgress(null);
     }
   }
 
@@ -957,12 +1015,15 @@ export default function HarvestAdminPage() {
             isArtistPanelOpen={isArtistPanelOpen}
             selectedArtist={selectedArtist}
             refreshingId={refreshingId}
+            isRefreshingAllLLM={isRefreshingAllLLM}
+            refreshAllLLMProgress={refreshAllLLMProgress}
             updatingPriorityId={updatingPriorityId}
             onTogglePanel={setIsArtistPanelOpen}
             onOpenAddArtist={() => setIsAddArtistOpen(true)}
             onSelectArtist={setSelectedArtist}
             onOpenArtistDetail={(artist) => setDetailArtist(artist)}
             onRefreshWithLLM={handleRefreshWithLLM}
+            onRefreshAllWithLLM={handleRefreshAllWithLLM}
             onUpdatePriority={handleUpdatePriority}
             onDeleteArtist={handleDeleteArtist}
           />

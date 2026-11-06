@@ -2,14 +2,12 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
-export const dynamic = 'force-dynamic';
-
 // ========================================================
 // 1. 음원 목록 및 단건 조회 (외래키 조인 에러 없는 안전 쿼리)
 // ========================================================
 export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
   try {
-    const { searchParams } = new URL(req.url);
     const limit = parseInt(searchParams.get('limit') || '2000', 10);
     const id = searchParams.get('id');
     const q = searchParams.get('q')?.trim();
